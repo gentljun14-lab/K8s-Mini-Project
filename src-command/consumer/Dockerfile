@@ -19,7 +19,7 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # 6. 실제 컨슈머 코드 복사
-COPY consumer-mongodb.py .
+COPY consumer_mongodb.py .
 
 # 7. (선택/권장) 보안을 위해 root가 아닌 일반 계정(appuser)으로 실행
 RUN useradd -m appuser && chown -R appuser /app
