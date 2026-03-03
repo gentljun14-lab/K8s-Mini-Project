@@ -1,37 +1,23 @@
-version: '3.8'
-
 services:
-  # Command 서비스용 DB (MongoDB)
+  # --- 인프라 영역 ---
   mongodb:
     image: mongo:latest
-    container_name: mobility-mongo
+    container_name: mobility-mongodb
     ports:
-      - "30004:27017"
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=password
-    networks:
-      - mobility-net
-    restart: always
+      - "27017:27017"
 
-  # Query 서비스용 DB (Redis) - 두 파일에서 중복, 통합
   redis:
     image: redis:alpine
     container_name: mobility-redis
     ports:
       - "6379:6379"
-    networks:
-      - mobility-net
-    restart: always
 
-  # 메시지 브로커 (Kafka) - Apache 공식 이미지 사용 (더 안정적)
   kafka:
     image: apache/kafka:latest
     container_name: mobility-kafka
     ports:
       - "9092:9092"
     environment:
-      # Apache Kafka 공식 환경 변수 (두 번째 파일의 Bitnami와 호환)
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller
       - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
@@ -40,63 +26,42 @@ services:
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
-      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
-    networks:
-      - mobility-net
-    restart: always
 
-  # Kafka 모니터링 UI (개발 편의성)
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: mobility-kafka-ui
+  # --- 서비스 영역 (도커 허브 이미지 활용) ---
+  ingest-server:
+    image: sbddjt/cqrs-write-server:v1 # 쓰기 서비스 이미지
+    container_name: mobility-ingest-server
+    # command는 이미지 내의 설정을 따르되, 필요시 여기서 덮어씌울 수 있습니다.
     ports:
-      - "8080:8080"
+      - "8080:8000"
     environment:
-      - KAFKA_CLUSTERS_0_NAME=local
-      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - MONGO_URL=mongodb://mongodb:27017/ #
+      - KAFKA_BROKER=kafka:9092             #
     depends_on:
+      - mongodb
       - kafka
-    networks:
-      - mobility-net
-    restart: always
 
-  # Query API: 조회 서버
   query-api:
-    build: .
+    image: hyunjun0907/mobility-query-api:v1.0.0 # 읽기 API 이미지
     container_name: mobility-query-api
     ports:
       - "8000:8000"
-    env_file:
-      - .env.example  # .env.example 사용
     environment:
-      - REDIS_HOST=redis
-      - KAFKA_BOOTSTRAP=kafka:9092
+      - REDIS_HOST=redis             #
+      - QUERY_API_PORT=8000          #
     depends_on:
       - redis
-      - kafka
-    networks:
-      - mobility-net
-    restart: always
 
-  # Query Consumer: Kafka 구독기
   query-consumer:
-    build: .
+    image: hyunjun0907/mobility-query-consumer:v1.0.0 # 읽기 컨슈머 이미지
     container_name: mobility-query-consumer
-    command: python consumer.py
-    env_file:
-      - .env.example  # .env.example 사용
+    # 이미 빌드된 이미지라도 실행 명령어(command)를 명시해주는 것이 안전합니다.
+    command: python consumer.py #
     environment:
-      - REDIS_HOST=redis
-      - KAFKA_BOOTSTRAP=kafka:9092
+      - KAFKA_BOOTSTRAP=kafka:9092    #
+      - KAFKA_TOPIC=car-live-updates #
+      - REDIS_HOST=redis             #
+      - REDIS_TTL_SEC=60             #
     depends_on:
-      - redis
       - kafka
-    networks:
-      - mobility-net
-    restart: on-failure
-
-networks:
-  mobility-net:
-    driver: bridge
+      - redis
