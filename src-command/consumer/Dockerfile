@@ -26,4 +26,4 @@ RUN useradd -m appuser && chown -R appuser /app
 USER appuser
 
 # 8. 컨테이너 실행 시 기본 명령어
-CMD ["python", "consumer-mongodb.py"]
+CMD ["python", "consumer_mongodb.py"]
