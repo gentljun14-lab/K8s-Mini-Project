@@ -6,40 +6,48 @@ services:
     image: mongo:latest
     container_name: mobility-mongo
     ports:
-      - "30004:27017" # 이미지 명세 반영
+      - "30004:27017"
     environment:
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=password
     networks:
       - mobility-net
+    restart: always
 
-  # Query 서비스용 DB (Redis)
+  # Query 서비스용 DB (Redis) - 두 파일에서 중복, 통합
   redis:
     image: redis:alpine
     container_name: mobility-redis
     ports:
-      - "6379:6379" # 이미지 명세 반영
+      - "6379:6379"
     networks:
       - mobility-net
+    restart: always
 
-  # 메시지 브로커 (Kafka)
+  # 메시지 브로커 (Kafka) - Apache 공식 이미지 사용 (더 안정적)
   kafka:
-    image: bitnami/kafka:latest
+    image: apache/kafka:latest
     container_name: mobility-kafka
     ports:
       - "9092:9092"
     environment:
-      - KAFKA_CFG_NODE_ID=1
-      - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - ALLOW_PLAINTEXT_LISTENER=yes
+      # Apache Kafka 공식 환경 변수 (두 번째 파일의 Bitnami와 호환)
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
     networks:
       - mobility-net
+    restart: always
 
-  # Kafka 모니터링 UI (조원들이 데이터 확인하기 편하도록 추가)
+  # Kafka 모니터링 UI (개발 편의성)
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: mobility-kafka-ui
@@ -52,6 +60,42 @@ services:
       - kafka
     networks:
       - mobility-net
+    restart: always
+
+  # Query API: 조회 서버
+  query-api:
+    build: .
+    container_name: mobility-query-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.example  # .env.example 사용
+    environment:
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP=kafka:9092
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - mobility-net
+    restart: always
+
+  # Query Consumer: Kafka 구독기
+  query-consumer:
+    build: .
+    container_name: mobility-query-consumer
+    command: python consumer.py
+    env_file:
+      - .env.example  # .env.example 사용
+    environment:
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP=kafka:9092
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - mobility-net
+    restart: on-failure
 
 networks:
   mobility-net:
