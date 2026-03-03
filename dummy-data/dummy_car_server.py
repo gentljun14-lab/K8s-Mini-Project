@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import random
 import httpx  # 외부 API(카프카 수신 서버)로 POST 요청을 보내기 위해 추가됨
@@ -37,6 +38,12 @@ EXTERNAL_QUERY_INGEST_URL = os.getenv("INGEST_SERVER_URL", "http://localhost:800
 MAX_SPEED_KMH = 100.0
 MAX_ACCEL_KMH_PER_SEC = 8.0
 MAX_DECEL_KMH_PER_SEC = 25.0
+INGEST_BURST_SIZE = max(1, int(os.getenv("INGEST_BURST_SIZE", "1")))#한번 업데이트 주기마다 몇건을 한번에 보내는지(payload를 ingest_burst_size만큼 복제해서 같은 시간대에 연속 전송)
+INGEST_INTERVAL_MIN = float(os.getenv("INGEST_INTERVAL_MIN", "1.0"))#다음 전송까지의 최소 대기시간
+INGEST_INTERVAL_MAX = float(os.getenv("INGEST_INTERVAL_MAX", "2.0"))#다음 전송까지의 최대 대기시간
+INGEST_REQUEST_TIMEOUT = float(os.getenv("INGEST_REQUEST_TIMEOUT", "2.0"))# 전송 실패동안 기다리는 timeout
+INGEST_CONCURRENCY = max(1, int(os.getenv("INGEST_CONCURRENCY", "20")))# 실제 네트워크에 보내는 요청수의 상한
+POST_SEMAPHORE = asyncio.Semaphore(INGEST_CONCURRENCY)
 MAX_SEED_JITTER_DEG = 0.002  # 약 200m 정도(위치별 차이가 큼)
 KOREA_BOUNDS = [
     (33.1, 124.5, 38.8, 132.0),  # 전국 육지+섬을 넓게 감싸는 범위 (근사)
@@ -504,13 +511,26 @@ vehicle_states: Dict[str, VehicleState] = {v.vehicle_id: v for v in generate_veh
 history_store: Dict[str, Deque[Dict[str, Any]]] = defaultdict(lambda: deque(maxlen=120))
 producer_tasks: List[asyncio.Task[Any]] = []
 
+async def _post_payload_with_limit(client: httpx.AsyncClient, vehicle_id: str, payload: Dict[str, Any]) -> None:
+    async with POST_SEMAPHORE:
+        try:
+            response = await client.post(
+                EXTERNAL_QUERY_INGEST_URL,
+                json=payload,
+                timeout=INGEST_REQUEST_TIMEOUT,
+            )
+            if response.status_code != 200:
+                print(f"[API Error] {vehicle_id} Status {response.status_code} - {response.text}")
+        except Exception as exc:
+            print(f"[Network Error] Failed to send {vehicle_id}: {exc}")
+
 async def stream_vehicle(vehicle_id: str) -> None:
     vehicle = vehicle_states[vehicle_id]
     
     # 세션 성능 향상을 위해 반복문 바깥에서 클라이언트를 생성하여 재사용합니다.
     async with httpx.AsyncClient() as client:
         while True:
-            interval = random.uniform(1.0, 2.0)
+            interval = random.uniform(INGEST_INTERVAL_MIN, INGEST_INTERVAL_MAX)
             await asyncio.sleep(interval)
 
             now = datetime.now(timezone.utc)
