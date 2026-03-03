@@ -24,4 +24,4 @@ EXPOSE 8000
 
 # 7. 실행 명령어
 # 현준님의 구조(api/main.py)에 맞춰 모듈 형태로 실행
-CMD ["python", "-m", "api.main"]
+CMD ["python", "api/query-api.py"]
