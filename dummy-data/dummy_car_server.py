@@ -34,6 +34,13 @@ DUMMY_DATA_PATH = PROJECT_ROOT / "car_profiles.json"
 
 # 수신 API(Kafka Ingest Server)의 주소입니다. 
 EXTERNAL_QUERY_INGEST_URL = os.getenv("INGEST_SERVER_URL", "http://localhost:8000/api/query/telemetry")
+MAX_SPEED_KMH = 100.0
+MAX_ACCEL_KMH_PER_SEC = 8.0
+MAX_DECEL_KMH_PER_SEC = 25.0
+MAX_SEED_JITTER_DEG = 0.002  # 약 200m 정도(위치별 차이가 큼)
+KOREA_BOUNDS = [
+    (33.1, 124.5, 38.8, 132.0),  # 전국 육지+섬을 넓게 감싸는 범위 (근사)
+]
 
 def _load_dummy_data() -> Dict[str, Any]:
     fallback = {
@@ -160,6 +167,7 @@ class VehicleState:
     steering_deg: float = 0.0
     coolant_temp_c: float = field(default_factory=lambda: random.uniform(70.0, 92.0))
     is_charging: bool = False
+    last_move_km: float = 0.0
 
 class VehicleEnvelope(BaseModel):
     vehicle_id: str = Field(..., example="CAR-1001")
@@ -198,8 +206,8 @@ def generate_vehicle_seeds() -> List[VehicleState]:
             else:
                 city_name, lat, lon = _pick_city_route(CITY_ROUTES)
 
-            lat += random.uniform(-0.01, 0.01)
-            lon += random.uniform(-0.01, 0.01)
+            lat += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
+            lon += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
             trip_state = _coerce_str(raw.get("trip_state"), random.choice(["PARK", "IDLE"]))
             ignition_on = bool(raw.get("ignition_on", trip_state == "DRIVE"))
 
@@ -231,8 +239,8 @@ def generate_vehicle_seeds() -> List[VehicleState]:
 
     for idx in range(1, 4):
         city_name, lat, lon = _pick_city_route(CITY_ROUTES)
-        lat += random.uniform(-0.03, 0.03)
-        lon += random.uniform(-0.03, 0.03)
+        lat += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
+        lon += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
         vehicle_id = f"CAR-{1000 + idx}"
         vin = f"KICF9AA{100000000 + idx:09d}"
         seeds.append(
@@ -274,6 +282,32 @@ def haversine_step(distance_km: float, heading_deg: float, lat: float) -> Tuple[
     d_lon = (distance_m * sin(radians(heading_deg))) / (111_000.0 * max(0.2, cos(radians(lat))))
     return d_lat, d_lon
 
+def _inside_korea(lat: float, lon: float) -> bool:
+    for lat_min, lon_min, lat_max, lon_max in KOREA_BOUNDS:
+        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
+            return True
+    return False
+
+def _move_within_area(vehicle: VehicleState, move_km: float) -> Tuple[float, float]:
+    """이동 후 좌표가 영역 밖이면 헤딩 반전 후 보정."""
+    d_lat, d_lon = haversine_step(move_km, vehicle.heading_deg, vehicle.latitude)
+    next_lat = vehicle.latitude + d_lat
+    next_lon = vehicle.longitude + d_lon
+
+    if _inside_korea(next_lat, next_lon):
+        return next_lat, next_lon
+
+    # 바운더리 탈출 시 반대 방향으로 살짝 튕겨내기
+    vehicle.heading_deg = (vehicle.heading_deg + 180.0 + random.uniform(-35.0, 35.0)) % 360
+    d_lat, d_lon = haversine_step(move_km, vehicle.heading_deg, vehicle.latitude)
+    next_lat = vehicle.latitude + d_lat
+    next_lon = vehicle.longitude + d_lon
+    if _inside_korea(next_lat, next_lon):
+        return next_lat, next_lon
+
+    # 그래도 못 잡으면 정지(좌표 유지)
+    return vehicle.latitude, vehicle.longitude
+
 def simulate_trip_state(vehicle: VehicleState, dt: float) -> None:
     p = random.random()
     if vehicle.trip_state == "PARK":
@@ -289,6 +323,7 @@ def simulate_trip_state(vehicle: VehicleState, dt: float) -> None:
             vehicle.trip_state = "DRIVE"
             vehicle.is_locked = False
             vehicle.ignition_on = True
+            vehicle.speed_kmh = max(vehicle.speed_kmh, 20.0)
         elif p < 0.09:
             vehicle.trip_state = "PARK"
             vehicle.is_locked = True
@@ -308,7 +343,7 @@ def simulate_trip_state(vehicle: VehicleState, dt: float) -> None:
             vehicle.ignition_on = False
             vehicle.throttle_pct = 0.0
         elif p < 0.06:
-            vehicle.speed_kmh = _clamp(vehicle.speed_kmh * random.uniform(0.2, 0.5), 0, 140)
+            vehicle.speed_kmh = 0.0
 
 def update_telemetry(vehicle: VehicleState, dt: float) -> List[str]:
     events = [random.choice(ROAD_EVENTS)]
@@ -316,18 +351,22 @@ def update_telemetry(vehicle: VehicleState, dt: float) -> List[str]:
         acc = random.uniform(-2.0, 4.5)
         vehicle.throttle_pct = _clamp(vehicle.throttle_pct + acc * 0.9 + random.uniform(-1.5, 1.5), 0, 100)
         vehicle.brake_pct = max(0.0, 12.0 - acc + random.uniform(-2.0, 5.0))
-        target_speed = 10.0 + vehicle.throttle_pct * 1.45
-        vehicle.speed_kmh = _clamp(
-            vehicle.speed_kmh + random.uniform(-3.5, 5.0) + acc,
-            0,
-            140,
-        )
-        vehicle.speed_kmh = _clamp((vehicle.speed_kmh * 0.55 + target_speed * 0.45), 0, 140)
+        desired_speed = _clamp(55.0 + (vehicle.throttle_pct / 100.0) * 45.0, 0.0, MAX_SPEED_KMH)
+        # 가속/감속을 dt 기준으로 제한해 급격한 변화 방지
+        max_up = MAX_ACCEL_KMH_PER_SEC * dt
+        max_down = MAX_DECEL_KMH_PER_SEC * dt
+        speed_delta = _clamp(desired_speed - vehicle.speed_kmh, -max_down, max_up)
+        vehicle.speed_kmh = _clamp(vehicle.speed_kmh + speed_delta, 0.0, MAX_SPEED_KMH)
         move_km = vehicle.speed_kmh * dt / 3600.0
-        d_lat, d_lon = haversine_step(move_km, vehicle.heading_deg, vehicle.latitude)
-        vehicle.latitude += d_lat
-        vehicle.longitude += d_lon
-        vehicle.odometer_km += move_km
+        prev_lat, prev_lon = vehicle.latitude, vehicle.longitude
+        next_lat, next_lon = _move_within_area(vehicle, move_km)
+        vehicle.latitude = next_lat
+        vehicle.longitude = next_lon
+        if next_lat == prev_lat and next_lon == prev_lon:
+            vehicle.last_move_km = 0.0
+        else:
+            vehicle.last_move_km = move_km
+            vehicle.odometer_km += vehicle.last_move_km
         vehicle.battery_soc = _clamp(
             vehicle.battery_soc - (0.6 + vehicle.speed_kmh / 120.0) * dt / 60.0, 0, 100
         )
@@ -335,6 +374,7 @@ def update_telemetry(vehicle: VehicleState, dt: float) -> List[str]:
         vehicle.engine_temp_c = _clamp(vehicle.engine_temp_c + random.uniform(-0.2, 0.6), 30.0, 95.0)
     elif vehicle.trip_state == "CHARGE":
         vehicle.speed_kmh = 0.0
+        vehicle.last_move_km = 0.0
         vehicle.throttle_pct = 0.0
         vehicle.brake_pct = 0.0
         vehicle.battery_soc = _clamp(vehicle.battery_soc + random.uniform(0.3, 0.8) * dt / 60.0 * 8.0, 0, 100)
@@ -342,12 +382,14 @@ def update_telemetry(vehicle: VehicleState, dt: float) -> List[str]:
         events.append("충전 중: DC 급속 충전기 연결")
     elif vehicle.trip_state == "IDLE":
         vehicle.speed_kmh = max(0.0, vehicle.speed_kmh * 0.85)
+        vehicle.last_move_km = 0.0
         vehicle.throttle_pct = 0.0
         vehicle.brake_pct = 0.0
         vehicle.coolant_temp_c = _clamp(vehicle.coolant_temp_c - random.uniform(0.0, 0.2), 55.0, 100.0)
         vehicle.engine_temp_c = _clamp(vehicle.engine_temp_c - random.uniform(0.0, 0.1), 38.0, 95.0)
     else:
         vehicle.speed_kmh = 0.0
+        vehicle.last_move_km = 0.0
         vehicle.throttle_pct = 0.0
         vehicle.brake_pct = 0.0
         vehicle.ignition_on = False
@@ -403,7 +445,7 @@ def build_payload(vehicle: VehicleState, events: List[str]) -> Dict[str, Any]:
             "duration_hms": duration_hms,
             "speed_kmh": round(vehicle.speed_kmh, 1),
             "odometer_km": round(vehicle.odometer_km, 2),
-            "odometer_delta_km": round(random.uniform(0.0, 0.12), 4)
+            "odometer_delta_km": round(vehicle.last_move_km, 4)
         },
         "battery": {
             "soc_pct": round(vehicle.battery_soc, 2),
@@ -468,7 +510,7 @@ async def stream_vehicle(vehicle_id: str) -> None:
     # 세션 성능 향상을 위해 반복문 바깥에서 클라이언트를 생성하여 재사용합니다.
     async with httpx.AsyncClient() as client:
         while True:
-            interval = random.uniform(1.0, 3.0)
+            interval = random.uniform(1.0, 2.0)
             await asyncio.sleep(interval)
 
             now = datetime.now(timezone.utc)
