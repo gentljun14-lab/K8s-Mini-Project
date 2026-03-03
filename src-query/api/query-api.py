@@ -1,8 +1,9 @@
 import os
 import json
 from dotenv import load_dotenv
-# 1. 다른 로컬 모듈(database 등)을 불러오기 전에 가장 먼저 환경 변수를 로드합니다.
-# override=True를 추가하여 .env의 값이 시스템 환경 변수보다 우선하도록 합니다.
+
+# 환경 설정을 로딩하고 .env의 값으로 환경변수를 덮어씁니다.
+# override=True로 지정하면 .env 값이 기존 환경변수보다 우선합니다.
 load_dotenv(override=True)
 
 from fastapi import FastAPI, HTTPException
@@ -12,7 +13,7 @@ from database import redis_client
 
 app = FastAPI(title="Connected Car Query API")
 
-# 프론트엔드 협업을 위한 CORS 설정
+# 현재는 개발/테스트 환경을 위해 CORS를 전체 허용으로 둡니다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,53 +21,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/health")
 async def health_check():
-    """시스템 상태 및 Redis 연결 확인"""
+    """서비스 상태 점검용 헬스체크. Redis 연결도 함께 확인합니다."""
     try:
         redis_client.ping()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Redis connection failed: {str(e)}")
 
+
+@app.get("/api/health")
+async def api_health_check():
+    """Ingress 라우팅용 /api/health 별칭."""
+    return await health_check()
+
+
 @app.get("/api/vehicles")
 async def get_all_vehicles():
-    """모든 차량의 최신 상태 조회"""
+    """전체 차량의 최근 상태를 조회합니다."""
     try:
-        # 환경 변수에서 키 패턴을 가져오거나 기본값 사용
+        # Redis 키 패턴에 맞는 차량 데이터 키 목록을 조회합니다.
         key_pattern = os.getenv("REDIS_KEY_PATTERN", "vehicle:*:latest")
         keys = redis_client.keys(key_pattern)
-        
+
         if not keys:
             return {"count": 0, "vehicles": []}
-        
+
         vehicles = [json.loads(redis_client.get(k)) for k in keys if redis_client.get(k)]
         return {"count": len(vehicles), "vehicles": vehicles}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+
 @app.get("/api/vehicles/{vehicle_id}")
 async def get_vehicle_by_id(vehicle_id: str):
-    """특정 차량 상세 조회"""
+    """특정 차량의 최근 상태를 조회합니다."""
     key = f"vehicle:{vehicle_id}:latest"
     data = redis_client.get(key)
     if not data:
         raise HTTPException(status_code=404, detail="Vehicle not found")
     return json.loads(data)
 
+
 if __name__ == "__main__":
     import uvicorn
-    
-    # [핵심] 포트 번호를 환경 변수에서 가져오되, 없으면 30003을 기본으로 사용
-    # 이렇게 하면 코드를 건드리지 않고도 외부에서 포트를 바꿀 수 있습니다.
-    app_port = int(os.getenv("QUERY_API_PORT", 30003))
+
+    # 로컬 실행 시 기본 포트를 8000으로 사용합니다.
+    # 환경변수 QUERY_API_PORT로 실행 포트를 덮어쓸 수 있습니다.
+    app_port = int(os.getenv("QUERY_API_PORT", 8000))
     app_host = os.getenv("QUERY_API_HOST", "0.0.0.0")
-    
-    print(f"🚀 Query API 서버를 시작합니다... (Port: {app_port})")
-    
+
+    print(f"Query API 시작: host={app_host}, port={app_port}")
+
     uvicorn.run(
-        "api.main:app", 
-        host=app_host, 
-        port=app_port, 
-        reload=True  # 개발 단계에서는 코드 수정 시 자동 재시작
+        app,
+        host=app_host,
+        port=app_port,
+        reload=False
     )

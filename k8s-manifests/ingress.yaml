@@ -25,13 +25,6 @@ spec:
                 name: connected-car-query-svc
                 port:
                   number: 80
-          - path: /api/vehicles/
-            pathType: Prefix
-            backend:
-              service:
-                name: connected-car-query-svc
-                port:
-                  number: 80
           - path: /health
             pathType: Prefix
             backend:

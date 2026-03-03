@@ -52,7 +52,7 @@ services:
   query-consumer:
     image: hyunjun0907/mobility-query-consumer:v1.0.0 
     container_name: mobility-query-consumer
-    command: python consumer.py #
+    command: python query-consumer.py #
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092    #
       - KAFKA_TOPIC=car.telemetry.events #
