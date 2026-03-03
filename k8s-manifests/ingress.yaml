@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: mobility-api-ingress
-  namespace: default
+  namespace: miniproject
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
@@ -11,17 +11,38 @@ spec:
     - host: mobility.local
       http:
         paths:
-          - path: /api/v1/telemetry
+          - path: /api/query/telemetry
             pathType: Prefix
             backend:
               service:
                 name: connected-car-command-svc
                 port:
                   number: 80
-          - path: /api/v1
+          - path: /api/vehicles
             pathType: Prefix
             backend:
               service:
-                name: connected-car-query-svc   # query service 이름으로 변경
+                name: connected-car-query-svc
+                port:
+                  number: 80
+          - path: /api/vehicles/
+            pathType: Prefix
+            backend:
+              service:
+                name: connected-car-query-svc
+                port:
+                  number: 80
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: connected-car-query-svc
+                port:
+                  number: 80
+          - path: /api/health
+            pathType: Prefix
+            backend:
+              service:
+                name: connected-car-query-svc
                 port:
                   number: 80

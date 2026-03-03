@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: connected-car-command
+  namespace: miniproject
   labels:
     app: connected-car-command
     tier: backend
@@ -20,19 +21,19 @@ spec:
     spec:
       containers:
         - name: command-api
-          image: your-docker-id/connected-car-command:latest
+          image: sbddjt/cqrs-write-server:v1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           env:
             - name: MONGO_URI
-              value: mongodb://mongo:27017/car_db
+              value: mongodb://mongo-svc:27017/car_db
             - name: MONGO_DB
               value: car_db
             - name: MONGO_COLLECTION
               value: car_logs
             - name: KAFKA_BROKERS
-              value: kafka:9092
+              value: kafka-svc:9092
             - name: KAFKA_TOPIC
               value: car.telemetry.events
             - name: KAFKA_ENABLED
@@ -60,6 +61,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: connected-car-command-svc
+  namespace: miniproject
   labels:
     app: connected-car-command
 spec:

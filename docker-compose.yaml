@@ -1,5 +1,4 @@
 services:
-  # --- 인프라 영역 ---
   mongodb:
     image: mongo:latest
     container_name: mobility-mongodb
@@ -27,22 +26,20 @@ services:
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
 
-  # --- 서비스 영역 (도커 허브 이미지 활용) ---
   ingest-server:
-    image: sbddjt/cqrs-write-server:v1 # 쓰기 서비스 이미지
+    image: sbddjt/cqrs-write-server:v1 
     container_name: mobility-ingest-server
-    # command는 이미지 내의 설정을 따르되, 필요시 여기서 덮어씌울 수 있습니다.
     ports:
       - "8080:8000"
     environment:
       - MONGO_URL=mongodb://mongodb:27017/ #
-      - KAFKA_BROKER=kafka:9092             #
+      - KAFKA_BROKERS=kafka:9092             #
     depends_on:
       - mongodb
       - kafka
 
   query-api:
-    image: hyunjun0907/mobility-query-api:v1.0.0 # 읽기 API 이미지
+    image: hyunjun0907/mobility-query-api:v1.0.0 
     container_name: mobility-query-api
     ports:
       - "8000:8000"
@@ -53,15 +50,15 @@ services:
       - redis
 
   query-consumer:
-    image: hyunjun0907/mobility-query-consumer:v1.0.0 # 읽기 컨슈머 이미지
+    image: hyunjun0907/mobility-query-consumer:v1.0.0 
     container_name: mobility-query-consumer
-    # 이미 빌드된 이미지라도 실행 명령어(command)를 명시해주는 것이 안전합니다.
     command: python consumer.py #
     environment:
       - KAFKA_BOOTSTRAP=kafka:9092    #
-      - KAFKA_TOPIC=car-live-updates #
+      - KAFKA_TOPIC=car.telemetry.events #
       - REDIS_HOST=redis             #
       - REDIS_TTL_SEC=60             #
     depends_on:
       - kafka
       - redis
+

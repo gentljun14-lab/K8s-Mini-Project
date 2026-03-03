@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connected-car-query
+  namespace: miniproject
+  labels:
+    app: connected-car-query
+    tier: backend
+    cqrs: query
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: connected-car-query
+  template:
+    metadata:
+      labels:
+        app: connected-car-query
+        tier: backend
+        cqrs: query
+    spec:
+      containers:
+        - name: query-api
+          image: hyunjun0907/mobility-query-api:v1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: REDIS_HOST
+              value: redis-svc
+            - name: REDIS_PORT
+              value: "6379"
+            - name: QUERY_API_PORT
+              value: "8000"
+            - name: QUERY_API_HOST
+              value: "0.0.0.0"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connected-car-query-svc
+  namespace: miniproject
+  labels:
+    app: connected-car-query
+spec:
+  type: NodePort
+  selector:
+    app: connected-car-query
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      nodePort: 30003
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connected-car-query-consumer
+  namespace: miniproject
+  labels:
+    app: connected-car-query-consumer
+    tier: worker
+    cqrs: query
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: connected-car-query-consumer
+  template:
+    metadata:
+      labels:
+        app: connected-car-query-consumer
+        tier: worker
+        cqrs: query
+    spec:
+      containers:
+        - name: query-consumer
+          image: hyunjun0907/mobility-query-consumer:v1.0.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_BROKERS
+              value: kafka-svc:9092
+            - name: KAFKA_BOOTSTRAP
+              value: kafka-svc:9092
+            - name: KAFKA_TOPIC
+              value: car.telemetry.events
+            - name: KAFKA_GROUP_ID
+              value: vehicle-projector
+            - name: REDIS_HOST
+              value: redis-svc
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_TTL_SEC
+              value: "60"

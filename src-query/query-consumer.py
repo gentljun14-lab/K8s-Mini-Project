@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import signal
 from kafka import KafkaConsumer
@@ -15,8 +15,8 @@ signal.signal(signal.SIGTERM, _handle_sigterm)
 signal.signal(signal.SIGINT, _handle_sigterm)
 
 def start_consumer():
-    topic = os.getenv("KAFKA_TOPIC", "vehicle-events")
-    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")  # K8s Service DNS 권장
+    topic = os.getenv("KAFKA_TOPIC", "car.telemetry.events")
+    bootstrap = os.getenv("KAFKA_BROKERS", os.getenv("KAFKA_BOOTSTRAP", "kafka:9092"))
     group_id = os.getenv("KAFKA_GROUP_ID", "vehicle-projector")
     ttl_sec = int(os.getenv("REDIS_TTL_SEC", "60"))
 
@@ -24,8 +24,8 @@ def start_consumer():
         topic,
         bootstrap_servers=bootstrap.split(","),
         group_id=group_id,
-        enable_auto_commit=True,          # 간단 운영용 (정교하게 하려면 False + 수동 commit)
-        auto_offset_reset="latest",       # 새 그룹이면 최신부터(관제 최신상태엔 보통 OK)
+        enable_auto_commit=True,          # 자동 커밋 사용; 수동 커밋이 필요하면 False로 바꾼 뒤 주기적으로 commit() 호출
+        auto_offset_reset="latest",       # 최신 오프셋부터 읽기(예전 메시지를 다시 읽지 않음)
         value_deserializer=lambda m: json.loads(m.decode("utf-8")),
     )
 
@@ -40,13 +40,13 @@ def start_consumer():
                         vehicle_data = msg.value
                         vehicle_id = vehicle_data.get("vehicle_id")
                         if not vehicle_id:
-                            # 스키마 불일치/누락 로그
+                            # vehicle_id가 없으면 건너뜁니다.
                             print(f"[WARN] missing vehicle_id: {vehicle_data}")
                             continue
 
                         key = f"vehicle:{vehicle_id}:latest"
                         redis_client.set(key, json.dumps(vehicle_data), ex=ttl_sec)
-                        # 필요하면 최근 업데이트 차량 목록 zset도 갱신 가능
+                        # Redis의 최근 데이터 조회 속도 개선이 필요하면 zset에 추가하는 방법도 고려
                         # redis_client.zadd("vehicles:recent", {vehicle_id: int(time.time())})
 
                     except Exception as e:
@@ -60,3 +60,5 @@ def start_consumer():
 
 if __name__ == "__main__":
     start_consumer()
+
+
