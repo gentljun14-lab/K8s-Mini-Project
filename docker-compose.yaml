@@ -27,7 +27,7 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
 
   ingest-server:
-    image: sbddjt/cqrs-write-server:v1 
+    image: sbddjt/telemetry-ingest-api:latest
     container_name: mobility-ingest-server
     ports:
       - "8080:8000"
