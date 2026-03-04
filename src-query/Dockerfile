@@ -4,6 +4,9 @@ FROM python:3.12-slim
 # 작업 디렉터리를 설정합니다.
 WORKDIR /app
 
+# 파이썬이 /app 디렉토리의 모듈(database.py 등)을 찾을 수 있게 설정
+ENV PYTHONPATH=/app
+
 # .pyc 생성 방지 및 출력 버퍼링 비활성화
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
