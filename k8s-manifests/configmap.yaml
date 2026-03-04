@@ -2,20 +2,20 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mobility-config
-  namespace: default
+  namespace: miniproject
   labels:
     app: connected-car
 data:
   # --- Kafka ---
-  KAFKA_BROKER: "kafka-svc:9092"
+  KAFKA_BROKERS: "kafka-svc:9092"
   KAFKA_BOOTSTRAP: "kafka-svc:9092"
-  KAFKA_TOPIC: "car-live-updates"
+  KAFKA_TOPIC: "car.telemetry.events"
   KAFKA_GROUP_ID: "vehicle-projector"
 
   # --- MongoDB ---
-  MONGO_URL: "mongodb://mongodb-svc:27017/"
+  MONGO_URI: "mongodb://mongo-svc:27017/car_db"
   MONGO_DB: "car_db"
-  MONGO_COLLECTION: "car_logs"
+  MONGO_COLLECTION: "telemetry_history"
 
   # --- Redis ---
   REDIS_HOST: "redis-svc"
@@ -27,5 +27,4 @@ data:
   QUERY_API_HOST: "0.0.0.0"
 
   # --- Dummy Data Server ---
-  # Command API(Ingest)의 ClusterIP 서비스 주소로 수신
   INGEST_SERVER_URL: "http://connected-car-command-svc/api/query/telemetry"
