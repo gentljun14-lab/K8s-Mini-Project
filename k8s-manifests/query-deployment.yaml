@@ -59,14 +59,13 @@ metadata:
   labels:
     app: connected-car-query
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: connected-car-query
   ports:
     - name: http
       port: 80
       targetPort: 8000
-      nodePort: 30003
 ---
 apiVersion: apps/v1
 kind: Deployment
