@@ -21,9 +21,8 @@ spec:
     spec:
       containers:
         - name: query-api
-          image: hyunjun0907/mobility-query-api:v1.0.1
+          image: hyunjun0907/mobility-query-api:v1.0.2
           imagePullPolicy: IfNotPresent
-          command: ["python", "api/query-api.py"]
           ports:
             - containerPort: 8000
           env:
@@ -92,9 +91,12 @@ spec:
     spec:
       containers:
         - name: query-consumer
-          image: hyunjun0907/mobility-query-consumer:v1.0.1
-          imagePullPolicy: IfNotPresent
-          command: ["python", "query-consumer.py"]
+          image: hyunjun0907/mobility-query-consumer:v1.0.2
+          imagePullPolicy: Always
+          command:
+            - "python"
+            - "-u"
+            - "/app/query-consumer.py"
           env:
             - name: KAFKA_BROKERS
               value: kafka-svc:9092

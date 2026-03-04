@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: command-api
-          image: sbddjt/cqrs-write-server:v1
+          image: sbddjt/telemetry-ingest-api:v1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -33,6 +33,8 @@ spec:
             - name: MONGO_COLLECTION
               value: car_logs
             - name: KAFKA_BROKERS
+              value: kafka-svc:9092
+            - name: KAFKA_BOOTSTRAP
               value: kafka-svc:9092
             - name: KAFKA_TOPIC
               value: car.telemetry.events
