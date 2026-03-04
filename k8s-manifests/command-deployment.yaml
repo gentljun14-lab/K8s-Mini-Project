@@ -25,23 +25,9 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
-          env:
-            - name: MONGO_URI
-              value: mongodb://mongo-svc:27017/car_db
-            - name: MONGO_DB
-              value: car_db
-            - name: MONGO_COLLECTION
-              value: car_logs
-            - name: KAFKA_BROKERS
-              value: kafka-svc:9092
-            - name: KAFKA_BOOTSTRAP
-              value: kafka-svc:9092
-            - name: KAFKA_TOPIC
-              value: car.telemetry.events
-            - name: KAFKA_ENABLED
-              value: "true"
-            - name: KAFKA_SEND_TIMEOUT_SECONDS
-              value: "3"
+          envFrom:
+            - configMapRef:
+                name: mobility-config
           readinessProbe:
             httpGet:
               path: /health
@@ -100,18 +86,6 @@ spec:
         - name: command-consumer
           image: sbddjt/telemetry-mongo-consumer:v1
           imagePullPolicy: IfNotPresent
-          env:
-            - name: MONGO_URI
-              value: mongodb://mongo-svc:27017/car_db
-            - name: MONGO_DB
-              value: car_db
-            - name: MONGO_COLLECTION
-              value: telemetry_history
-            - name: KAFKA_BOOTSTRAP
-              value: kafka-svc:9092
-            - name: KAFKA_BROKERS
-              value: kafka-svc:9092
-            - name: KAFKA_TOPIC
-              value: car.telemetry.events
-            - name: KAFKA_GROUP_ID
-              value: vehicle-mongo-saver
+          envFrom:
+            - configMapRef:
+                name: mobility-config
