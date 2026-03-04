@@ -1,0 +1,17 @@
+controller:
+  replicaCount: 1
+  nodeSelector:
+    kubernetes.io/hostname: master
+    kubernetes.io/os: linux
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoExecute
+  service:
+    type: NodePort
+    nodePorts:
+      http: 30080
+      https: 30443
