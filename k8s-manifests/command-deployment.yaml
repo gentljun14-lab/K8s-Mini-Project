@@ -97,7 +97,7 @@ spec:
     spec:
       containers:
         - name: command-consumer
-          image: sbddjt/telemetry-mongo-consumer:latest
+          image: sbddjt/telemetry-mongo-consumer:v1
           imagePullPolicy: IfNotPresent
           env:
             - name: MONGO_URI

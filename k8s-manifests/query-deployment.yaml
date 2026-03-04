@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: query-api
-          image: hyunjun0907/mobility-query-api:v1.0.0
+          image: hyunjun0907/mobility-query-api:v1.0.1
           imagePullPolicy: IfNotPresent
           command: ["python", "api/query-api.py"]
           ports:
@@ -92,7 +92,7 @@ spec:
     spec:
       containers:
         - name: query-consumer
-          image: hyunjun0907/mobility-query-consumer:v1.0.0
+          image: hyunjun0907/mobility-query-consumer:v1.0.1
           imagePullPolicy: IfNotPresent
           command: ["python", "query-consumer.py"]
           env:
