@@ -4,7 +4,7 @@ metadata:
   name: ingress-nginx-controller
   namespace: ingress-nginx
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app.kubernetes.io/component: controller
     app.kubernetes.io/instance: ingress-nginx
@@ -14,9 +14,7 @@ spec:
       protocol: TCP
       port: 80
       targetPort: 80
-      nodePort: 30080
     - name: https
       protocol: TCP
       port: 443
       targetPort: 443
-      nodePort: 30443
