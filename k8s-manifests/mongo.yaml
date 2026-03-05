@@ -81,3 +81,44 @@ spec:
   ports:
   - port: 27017
     targetPort: 27017
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongo-telemetry-retention
+  namespace: miniproject
+  labels:
+    app: mongo
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  timeZone: UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: retention-cleaner
+              image: mongo:7
+              command:
+                - "bash"
+                - "-lc"
+                - |
+                  set -eu
+                  CUTOFF=$(date -u -d "7 days ago" +%Y-%m-%dT%H:%M:%S+00:00)
+                  mongosh mongodb://mongo-svc:27017/connected_car --eval '
+                    const cutoff = "'$CUTOFF'";
+                    const query = {
+                      $or: [
+                        { received_at: { $lt: cutoff } },
+                        { _consumed_at: { $lt: cutoff } }
+                      ]
+                    };
+                    const result = db.telemetry_history.deleteMany(query);
+                    printjson({ removed_count: result.deletedCount, cutoff: cutoff, ok: result.ok });
+                  '

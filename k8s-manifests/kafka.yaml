@@ -25,6 +25,8 @@ spec:
               value: "1"
             - name: KAFKA_CLUSTER_ID
               value: "qzA2f9s9YxK4K9m"
+            - name: KAFKA_LOG_DIRS
+              value: "/tmp/kraft-combined-logs"
             - name: KAFKA_PROCESS_ROLES
               value: "controller,broker"
             - name: KAFKA_LISTENERS
@@ -45,6 +47,22 @@ spec:
               value: "1"
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
+            - name: KAFKA_OFFSETS_RETENTION_MINUTES
+              value: "10080"
+            - name: KAFKA_LOG_RETENTION_MS
+              value: "604800000"
+            - name: KAFKA_LOG_RETENTION_BYTES
+              value: "2147483648"
+            - name: KAFKA_LOG_CLEANUP_POLICY
+              value: "delete"
+            - name: KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS
+              value: "300000"
+            - name: KAFKA_LOG_SEGMENT_BYTES
+              value: "268435456"
+            - name: KAFKA_LOG_SEGMENT_MS
+              value: "3600000"
+            - name: KAFKA_LOG_SEGMENT_DELETE_DELAY_MS
+              value: "60000"
           ports:
             - containerPort: 9092
             - containerPort: 9093

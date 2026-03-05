@@ -22,7 +22,15 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
-          args: ["--appendonly", "yes"]
+          args:
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
+            - "--maxmemory"
+            - "256mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
           ports:
             - containerPort: 6379
           volumeMounts:
