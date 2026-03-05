@@ -1,15 +1,19 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: mongo
   namespace: miniproject
   labels:
     app: mongo
 spec:
+  serviceName: mongo-hl-svc
   replicas: 1
   selector:
     matchLabels:
       app: mongo
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -22,7 +26,7 @@ spec:
         ports:
         - containerPort: 27017
         volumeMounts:
-        - name: mongo-storage
+        - name: mongo-data
           mountPath: /data/db
         livenessProbe:
           tcpSocket:
@@ -38,10 +42,32 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 2
           failureThreshold: 5
-      volumes:
-        - name: mongo-storage
-          persistentVolumeClaim:
-            claimName: mongo-pvc
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: nfs-storage
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-hl-svc
+  namespace: miniproject
+  labels:
+    app: mongo
+spec:
+  clusterIP: None
+  selector:
+    app: mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
 
 ---
 apiVersion: v1

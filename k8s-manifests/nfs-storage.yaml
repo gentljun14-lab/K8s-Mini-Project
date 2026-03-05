@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: mongo-pv-nfs
+  name: mongo-pv-nfs-0
   labels:
     app: mongo
 spec:
@@ -13,28 +13,16 @@ spec:
   storageClassName: nfs-storage
   claimRef:
     namespace: miniproject
-    name: mongo-pvc
+    name: mongo-data-mongo-0
   nfs:
     server: 10.0.2.100
     path: /srv/nfs/mongo
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mongo-pvc
-  namespace: miniproject
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: nfs-storage
+
 ---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: redis-pv-nfs
+  name: redis-pv-nfs-0
   labels:
     app: redis
 spec:
@@ -46,28 +34,16 @@ spec:
   storageClassName: nfs-storage
   claimRef:
     namespace: miniproject
-    name: redis-pvc
+    name: redis-data-redis-0
   nfs:
     server: 10.0.2.100
     path: /srv/nfs/redis
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-  namespace: miniproject
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
-  storageClassName: nfs-storage
+
 ---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: kafka-pv-nfs
+  name: kafka-pv-nfs-0
   labels:
     app: kafka
 spec:
@@ -79,22 +55,7 @@ spec:
   storageClassName: nfs-storage
   claimRef:
     namespace: miniproject
-    name: kafka-pvc
+    name: kafka-data-kafka-0
   nfs:
     server: 10.0.2.100
     path: /srv/nfs/kafka
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: kafka-pvc
-  namespace: miniproject
-  annotations:
-    description: "Kafka data for KRaft metadata + logs"
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: nfs-storage
