@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Vehicle, VehiclesResponse } from '../types/vehicle'
+import type { Vehicle, VehiclesResponse } from '../types/vehicle'
 
 // .env의 VITE_QUERY_API_URL 값을 읽어옴, 없으면 localhost:30003 사용
 const API_BASE = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:30003'

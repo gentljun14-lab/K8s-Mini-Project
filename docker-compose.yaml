@@ -76,3 +76,14 @@ services:
       - kafka
       - redis
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mobility-frontend
+    ports:
+      - "3000:80"
+    environment:
+    - QUERY_API_URL=http://query-api:8000 
+    depends_on:
+      - query-api
