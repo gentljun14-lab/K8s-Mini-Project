@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: {도커허브ID}/mobility-frontend:v1.0.0
+          image: hyunjun0907/k8s-mini-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

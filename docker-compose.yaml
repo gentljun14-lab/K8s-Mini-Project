@@ -53,7 +53,7 @@ services:
       - mongodb
 
   query-api:
-    image: hyunjun0907/mobility-query-api:v1.0.2
+    image: hyunjun0907/mobility-query-api:v1
     container_name: mobility-query-api
     ports:
       - "8000:8000"
@@ -64,7 +64,7 @@ services:
       - redis
 
   query-consumer:
-    image: hyunjun0907/mobility-query-consumer:v1.0.2
+    image: hyunjun0907/mobility-query-consumer:v1
     container_name: mobility-query-consumer
     command: python query-consumer.py #
     environment:
@@ -77,9 +77,7 @@ services:
       - redis
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: hyunjun0907/k8s-mini-frontend:latest
     container_name: mobility-frontend
     ports:
       - "3000:80"
