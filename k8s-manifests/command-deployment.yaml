@@ -8,7 +8,7 @@ metadata:
     tier: backend
     cqrs: command
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: connected-car-command
@@ -25,6 +25,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
           envFrom:
             - configMapRef:
                 name: mobility-config
@@ -71,27 +78,11 @@ metadata:
     tier: worker
     cqrs: command
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: connected-car-command-consumer
   template:
     metadata:
       labels:
-        app: connected-car-command-consumer
-        tier: worker
-        cqrs: command
-    spec:
-      containers:
-        - name: command-consumer
-          image: sbddjt/telemetry-mongo-consumer:v1
-          imagePullPolicy: IfNotPresent
-          env:
-            - name: KAFKA_GROUP_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: mobility-config
-                  key: KAFKA_GROUP_ID_COMMAND
-          envFrom:
-            - configMapRef:
-                name: mobility-config
+        app: connected-
