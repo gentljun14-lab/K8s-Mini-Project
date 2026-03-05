@@ -86,6 +86,12 @@ spec:
         - name: command-consumer
           image: sbddjt/telemetry-mongo-consumer:v1
           imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_GROUP_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: KAFKA_GROUP_ID_COMMAND
           envFrom:
             - configMapRef:
                 name: mobility-config
