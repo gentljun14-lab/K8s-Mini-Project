@@ -49,7 +49,8 @@ spec:
               mountPath: /tmp/kraft-combined-logs
       volumes:
         - name: kafka-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: kafka-pvc
 ---
 apiVersion: v1
 kind: Service
