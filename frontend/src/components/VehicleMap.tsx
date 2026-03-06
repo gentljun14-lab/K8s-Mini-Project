@@ -22,38 +22,53 @@ type VehicleMapProps = {
   vehicles: Vehicle[]
 }
 
-function getVehicleLocation(vehicle: Vehicle): { latitude: number; longitude: number } | null {
-  const coords =
-    vehicle.location &&
-    Number.isFinite(vehicle.location.latitude) &&
-    Number.isFinite(vehicle.location.longitude)
-      ? vehicle.location
-      : vehicle.raw?.location?.coordinates
-        ? {
-            latitude: Number(vehicle.raw.location.coordinates.latitude),
-            longitude: Number(vehicle.raw.location.coordinates.longitude),
-          }
-        : vehicle.raw?.location
-          ? {
-              latitude: Number(vehicle.raw.location.latitude ?? NaN),
-              longitude: Number(vehicle.raw.location.longitude ?? NaN),
-            }
-          : null
+type VehiclePoint = {
+  latitude: number
+  longitude: number
+}
 
-  if (!coords) {
-    return null
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function getVehicleLocation(vehicle: Vehicle): VehiclePoint | null {
+  const top = vehicle.location
+  if (top) {
+    const lat = toFiniteNumber(top.latitude)
+    const lng = toFiniteNumber(top.longitude)
+    if (lat !== undefined && lng !== undefined) {
+      return { latitude: lat, longitude: lng }
+    }
   }
 
-  if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) {
-    return null
+  const rawLocation = vehicle.raw?.location
+  if (rawLocation?.coordinates) {
+    const lat = toFiniteNumber(rawLocation.coordinates.latitude)
+    const lng = toFiniteNumber(rawLocation.coordinates.longitude)
+    if (lat !== undefined && lng !== undefined) {
+      return { latitude: lat, longitude: lng }
+    }
   }
 
-  return coords
+  const lat = toFiniteNumber(rawLocation?.latitude)
+  const lng = toFiniteNumber(rawLocation?.longitude)
+  if (lat !== undefined && lng !== undefined) {
+    return { latitude: lat, longitude: lng }
+  }
+
+  return null
 }
 
 function buildLabel(vehicle: Vehicle) {
-  const model = vehicle.raw?.vehicle?.model ?? '차량 모델 미제공'
-  const driver = vehicle.raw?.vehicle?.driver ?? '운전자 정보 없음'
+  const model = vehicle.raw?.vehicle?.model ?? 'Model Unknown'
+  const driver = vehicle.raw?.vehicle?.driver ?? 'Driver Unknown'
   const city = vehicle.raw?.location?.city ?? '-'
   return { model, driver, city }
 }
@@ -85,12 +100,12 @@ export default function VehicleMap({ vehicles }: VehicleMapProps) {
               <Popup>
                 <div style={{ color: '#333' }}>
                   <strong>{label.model}</strong> ({vehicle.vehicle_id})<br />
-                  운전자: {label.driver}<br />
-                  상태: {vehicle.state}<br />
-                  최근 이벤트: {vehicle.recent_event ?? '-'}<br />
-                  속도: {vehicle.speed_kmh} km/h<br />
-                  배터리: {vehicle.soc_pct} %<br />
-                  위치: {label.city} ({pos.latitude.toFixed(5)}, {pos.longitude.toFixed(5)})
+                  Driver: {label.driver}<br />
+                  State: {vehicle.state}<br />
+                  Recent: {vehicle.recent_event ?? '-'}<br />
+                  Speed: {vehicle.speed_kmh} km/h<br />
+                  SOC: {vehicle.soc_pct}%<br />
+                  City: {label.city} ({pos.latitude.toFixed(5)}, {pos.longitude.toFixed(5)})
                 </div>
               </Popup>
             </Marker>

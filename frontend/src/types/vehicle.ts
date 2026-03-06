@@ -14,6 +14,8 @@ export interface RawVehicleData {
   location?: {
     city?: string
     coordinates?: VehicleLocation
+    latitude?: number
+    longitude?: number
     heading_deg?: number
     altitude_m?: number
     gps_accuracy_m?: number
