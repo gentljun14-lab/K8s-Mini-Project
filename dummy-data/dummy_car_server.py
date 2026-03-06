@@ -34,7 +34,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DUMMY_DATA_PATH = PROJECT_ROOT / "car_profiles.json"
 
 # 수신 API(Kafka Ingest Server)의 주소입니다. 
-EXTERNAL_QUERY_INGEST_URL = os.getenv("INGEST_SERVER_URL", "http://localhost:8000/api/query/telemetry")
+EXTERNAL_QUERY_INGEST_URL = os.getenv(
+    "INGEST_SERVER_URL",
+    "http://192.168.202.243:50031/api/query/telemetry",
+)
 MAX_SPEED_KMH = 100.0
 MAX_ACCEL_KMH_PER_SEC = 8.0
 MAX_DECEL_KMH_PER_SEC = 25.0
@@ -45,6 +48,10 @@ INGEST_REQUEST_TIMEOUT = float(os.getenv("INGEST_REQUEST_TIMEOUT", "2.0"))# 전�
 INGEST_CONCURRENCY = max(1, int(os.getenv("INGEST_CONCURRENCY", "20")))# 실제 네트워크에 보내는 요청수의 상한
 POST_SEMAPHORE = asyncio.Semaphore(INGEST_CONCURRENCY)
 MAX_SEED_JITTER_DEG = 0.002  # 약 200m 정도(위치별 차이가 큼)
+try:
+    DUMMY_SEED_COUNT = max(1, int(os.getenv("DUMMY_SEED_COUNT", "1000")))
+except ValueError:
+    DUMMY_SEED_COUNT = 1000
 KOREA_BOUNDS = [
     (33.1, 124.5, 38.8, 132.0),  # 전국 육지+섬을 넓게 감싸는 범위 (근사)
 ]
@@ -200,10 +207,13 @@ def _build_tire_pressure(raw: Optional[Dict[str, Any]]) -> Dict[str, float]:
 
 def generate_vehicle_seeds() -> List[VehicleState]:
     seeds: List[VehicleState] = []
+    target_count = max(1, DUMMY_SEED_COUNT)
     seed_vehicles = DUMMY_DATA.get("seed_vehicles")
 
     if isinstance(seed_vehicles, list) and seed_vehicles:
         for raw in seed_vehicles:
+            if len(seeds) >= target_count:
+                break
             if not isinstance(raw, dict):
                 continue
             city_raw = _coerce_str(raw.get("city"), "")
@@ -241,21 +251,20 @@ def generate_vehicle_seeds() -> List[VehicleState]:
                     ambient_temp_c=_coerce_float(raw.get("ambient_temp_c"), random.uniform(-2.0, 32.0)),
                 )
             )
-        if seeds:
-            return seeds
 
-    for idx in range(1, 4):
+    for idx in range(len(seeds), target_count):
         city_name, lat, lon = _pick_city_route(CITY_ROUTES)
         lat += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
         lon += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
-        vehicle_id = f"CAR-{1000 + idx}"
-        vin = f"KICF9AA{100000000 + idx:09d}"
+        vehicle_num = idx + 1
+        vehicle_id = f"CAR-{1000 + vehicle_num}"
+        vin = f"KICF9AA{100000000 + vehicle_num:09d}"
         seeds.append(
             VehicleState(
                 vehicle_id=vehicle_id,
                 vin=vin,
                 model=random.choice(VEHICLE_MODELS),
-                driver=DRIVERS[idx - 1],
+                driver=DRIVERS[(idx) % len(DRIVERS)],
                 city=city_name,
                 latitude=lat,
                 longitude=lon,
