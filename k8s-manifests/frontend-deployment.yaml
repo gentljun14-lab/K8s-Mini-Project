@@ -29,6 +29,8 @@ spec:
                 secretKeyRef:
                   name: mobility-secret
                   key: VWORLD_API_KEY
+            - name: QUERY_API_URL          # 추가: nginx envsubst가 proxy_pass 경로 치환에 사용
+              value: "http://connected-car-query-svc"
           readinessProbe:
             httpGet:
               path: /
