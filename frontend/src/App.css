@@ -34,4 +34,18 @@ body {
 
 .map-wrapper {
   flex: 1;
+  position: relative;
+}
+
+.status {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 1001;
+  color: #9aa3b2;
+  background: rgba(26, 29, 46, 0.85);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  max-width: 320px;
 }

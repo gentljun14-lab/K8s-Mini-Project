@@ -1,8 +1,25 @@
 import { useState, useEffect } from 'react'
 import type { Vehicle, VehiclesResponse } from '../types/vehicle'
 
-// .env의 VITE_QUERY_API_URL 값을 읽어옴, 없으면 localhost:30003 사용
-const API_BASE = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:30003'
+const configuredBase = (import.meta.env.VITE_QUERY_API_URL || '/api').trim()
+
+const QUERY_API_BASE = (() => {
+  if (!configuredBase || configuredBase === '/') return '/api'
+
+  if (
+    configuredBase.startsWith('http://') ||
+    configuredBase.startsWith('https://') ||
+    configuredBase.startsWith('//')
+  ) {
+    return configuredBase.replace(/\/+$/, '')
+  }
+
+  return `/${configuredBase.replace(/^\/+/, '').replace(/\/+$/, '')}`
+})()
+
+function getVehiclesEndpoint(): string {
+  return `${QUERY_API_BASE}/vehicles`
+}
 
 interface UseVehiclesResult {
   vehicles: Vehicle[]
@@ -19,32 +36,35 @@ export function useVehicles(intervalMs = 3000): UseVehiclesResult {
 
   useEffect(() => {
     const fetchVehicles = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/vehicles`)
+      const endpoint = getVehiclesEndpoint()
 
+      try {
+        const res = await fetch(endpoint)
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`)
         }
 
-        const data: VehiclesResponse = await res.json()
-        setVehicles(data.vehicles ?? [])
+        const payload: unknown = await res.json()
+        const parsed: Vehicle[] = Array.isArray(payload)
+          ? payload
+          : 'vehicles' in (payload as Record<string, unknown>)
+            ? ((payload as VehiclesResponse).vehicles ?? [])
+            : []
+
+        setVehicles(parsed ?? [])
         setError(null)
         setLastUpdated(new Date())
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'API 연결 실패'
+        const message = e instanceof Error ? e.message : 'API request failed'
         setError(message)
       } finally {
         setLoading(false)
       }
     }
 
-    // 최초 1회 즉시 실행
     fetchVehicles()
 
-    // 이후 intervalMs 마다 반복 실행
     const interval = setInterval(fetchVehicles, intervalMs)
-
-    // 컴포넌트 언마운트 시 인터벌 정리
     return () => clearInterval(interval)
   }, [intervalMs])
 

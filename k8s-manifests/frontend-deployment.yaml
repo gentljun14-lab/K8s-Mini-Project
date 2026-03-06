@@ -22,10 +22,7 @@ spec:
           image: hyunjun0907/k8s-mini-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
-          env:
-            - name: QUERY_API_URL
-              value: http://connected-car-query-svc
+          - containerPort: 80
           readinessProbe:
             httpGet:
               path: /
