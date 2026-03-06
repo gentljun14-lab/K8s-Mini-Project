@@ -14,9 +14,7 @@ const DefaultIcon = L.icon({
 })
 L.Marker.prototype.options.icon = DefaultIcon
 
-const VWORLD_KEY = import.meta.env.VITE_VWORLD_API_KEY
-const DEFAULT_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-const VWORLD_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Base/{z}/{y}/{x}.png`
+const TILE_URL = '/api/map/tiles/{z}/{y}/{x}'
 
 type VehicleMapProps = {
   vehicles: Vehicle[]
@@ -81,7 +79,7 @@ export default function VehicleMap({ vehicles }: VehicleMapProps) {
       style={{ width: '100%', height: '100%' }}
     >
       <TileLayer
-        url={VWORLD_KEY ? VWORLD_URL : DEFAULT_TILE_URL}
+        url={TILE_URL}
         attribution='&copy; OpenStreetMap'
         maxZoom={19}
       />

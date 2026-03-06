@@ -58,6 +58,11 @@ spec:
                 configMapKeyRef:
                   name: mobility-config
                   key: REDIS_KEY_PATTERN
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: REDIS_PASSWORD
           readinessProbe:
             httpGet:
               path: /health
@@ -136,3 +141,8 @@ spec:
                 configMapKeyRef:
                   name: mobility-config
                   key: KAFKA_GROUP_ID_QUERY
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: REDIS_PASSWORD

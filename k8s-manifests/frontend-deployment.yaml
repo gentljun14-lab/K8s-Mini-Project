@@ -23,6 +23,12 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 80
+          env:
+            - name: VWORLD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: VWORLD_API_KEY
           readinessProbe:
             httpGet:
               path: /

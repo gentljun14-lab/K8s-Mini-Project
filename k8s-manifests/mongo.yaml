@@ -22,7 +22,18 @@ spec:
       containers:
       - name: mongo
         image: mongo:7
-        args: ["--wiredTigerCacheSizeGB", "0.25"]
+        args: ["--auth", "--wiredTigerCacheSizeGB", "0.25"]
+        env:
+          - name: MONGO_INITDB_ROOT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: mobility-secret
+                key: MONGO_INITDB_ROOT_USERNAME
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mobility-secret
+                key: MONGO_INITDB_ROOT_PASSWORD
         ports:
         - containerPort: 27017
         volumeMounts:
@@ -108,6 +119,12 @@ spec:
               envFrom:
                 - configMapRef:
                     name: mobility-config
+              env:
+                - name: MONGO_URI
+                  valueFrom:
+                    secretKeyRef:
+                      name: mobility-secret
+                      key: MONGO_URI
               command:
                 - "bash"
                 - "-lc"
