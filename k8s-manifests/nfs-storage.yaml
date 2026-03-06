@@ -11,9 +11,6 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: nfs-storage
-  claimRef:
-    namespace: miniproject
-    name: mongo-data-mongo-0
   nfs:
     server: 10.0.2.100
     path: /srv/nfs/mongo
@@ -32,9 +29,6 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: nfs-storage
-  claimRef:
-    namespace: miniproject
-    name: redis-data-redis-0
   nfs:
     server: 10.0.2.100
     path: /srv/nfs/redis
@@ -53,9 +47,6 @@ spec:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
   storageClassName: nfs-storage
-  claimRef:
-    namespace: miniproject
-    name: kafka-data-kafka-0
   nfs:
     server: 10.0.2.100
     path: /srv/nfs/kafka
