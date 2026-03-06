@@ -93,3 +93,45 @@ spec:
     - name: redis
       port: 6379
       targetPort: 6379
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-vehicle-latest-cleanup
+  namespace: miniproject
+  labels:
+    app: redis
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  timeZone: UTC
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: redis:7-alpine
+              env:
+                - name: REDIS_HOST
+                  value: "redis-svc"
+                - name: REDIS_PORT
+                  value: "6379"
+              command:
+                - /bin/sh
+                - -lc
+                - |
+                  set -eu
+                  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --scan --pattern "vehicle:*:latest" |
+                  while read -r key; do
+                    # Keep latest key set: if TTL missing (legacy data), remove it.
+                    ttl=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ttl "$key")
+                    if [ "$ttl" = "-1" ]; then
+                      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" del "$key" >/dev/null
+                    fi
+                  done

@@ -105,20 +105,33 @@ spec:
           containers:
             - name: retention-cleaner
               image: mongo:7
+              envFrom:
+                - configMapRef:
+                    name: mobility-config
               command:
                 - "bash"
                 - "-lc"
                 - |
                   set -eu
-                  CUTOFF=$(date -u -d "7 days ago" +%Y-%m-%dT%H:%M:%S+00:00)
-                  mongosh mongodb://mongo-svc:27017/connected_car --eval '
-                    const cutoff = "'$CUTOFF'";
+                  TTL_DAYS="${MONGO_TTL_DAYS:-7}"
+                  mongosh "${MONGO_URI:-mongodb://mongo-svc:27017}" --eval '
+                    const dbName = process.env.MONGO_DB || "car_db";
+                    const collection = process.env.MONGO_COLLECTION || "telemetry_history";
+                    const ttlDays = Number(process.env.MONGO_TTL_DAYS || 7);
+                    const cutoffDate = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
+                    const db = db.getSiblingDB(dbName);
+                    db[collection].createIndex({ created_at: 1 }, { expireAfterSeconds: ttlDays * 24 * 60 * 60, name: "telemetry_created_at_ttl" });
                     const query = {
                       $or: [
-                        { received_at: { $lt: cutoff } },
-                        { _consumed_at: { $lt: cutoff } }
+                        { created_at: { $lt: cutoffDate } },
+                        { received_at: { $lt: cutoffDate } },
+                        { _consumed_at: { $lt: cutoffDate } }
                       ]
                     };
-                    const result = db.telemetry_history.deleteMany(query);
-                    printjson({ removed_count: result.deletedCount, cutoff: cutoff, ok: result.ok });
+                    const result = db[collection].deleteMany(query);
+                    printjson({ removed_count: result.deletedCount, cutoff: cutoffDate.toISOString(), ttlDays, ok: result.ok });
                   '
+
+
+
+

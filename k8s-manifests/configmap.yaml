@@ -17,9 +17,10 @@ data:
   KAFKA_RETRY_SEC: "3"
 
   # --- MongoDB ---
-  MONGO_URI: "mongodb://mongo-svc:27017/car_db"
+  MONGO_URI: "mongodb://mongo-svc:27017"
   MONGO_DB: "car_db"
   MONGO_COLLECTION: "telemetry_history"
+  MONGO_TTL_DAYS: "7"
 
   # --- Redis ---
   REDIS_HOST: "redis-svc"
@@ -33,3 +34,4 @@ data:
 
   # --- Dummy Data Server ---
   INGEST_SERVER_URL: "http://connected-car-command-svc/api/query/telemetry"
+
