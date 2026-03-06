@@ -8,8 +8,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: mobility.local
-      http:
+    - http:
         paths:
           - path: /api/map/
             pathType: Prefix
