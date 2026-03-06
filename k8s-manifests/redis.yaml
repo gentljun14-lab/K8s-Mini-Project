@@ -22,15 +22,16 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
-          args:
-            - "--save"
-            - ""
-            - "--appendonly"
-            - "no"
-            - "--maxmemory"
-            - "256mb"
-            - "--maxmemory-policy"
-            - "allkeys-lru"
+          command:
+            - "sh"
+            - "-c"
+            - "redis-server --requirepass \"$REDIS_PASSWORD\" --save '' --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: REDIS_PASSWORD
           ports:
             - containerPort: 6379
           volumeMounts:
@@ -122,6 +123,11 @@ spec:
                   value: "redis-svc"
                 - name: REDIS_PORT
                   value: "6379"
+                - name: REDISCLI_AUTH
+                  valueFrom:
+                    secretKeyRef:
+                      name: mobility-secret
+                      key: REDIS_PASSWORD
               command:
                 - /bin/sh
                 - -lc

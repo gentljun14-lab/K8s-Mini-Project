@@ -106,6 +106,11 @@ spec:
                 configMapKeyRef:
                   name: mobility-config
                   key: KAFKA_GROUP_ID_COMMAND
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: MONGO_URI
           envFrom:
             - configMapRef:
                 name: mobility-config
