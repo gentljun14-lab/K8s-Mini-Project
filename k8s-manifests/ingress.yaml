@@ -11,7 +11,7 @@ spec:
     - host: mobility.local
       http:
         paths:
-          - path: /
+          - path: /api/map/
             pathType: Prefix
             backend:
               service:
@@ -44,5 +44,12 @@ spec:
             backend:
               service:
                 name: connected-car-query-svc
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: connected-car-frontend-svc
                 port:
                   number: 80
