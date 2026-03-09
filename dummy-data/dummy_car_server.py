@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import copy
@@ -9,7 +9,7 @@ import os
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from math import cos, radians, sin
+from math import asin, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
@@ -52,9 +52,100 @@ try:
     DUMMY_SEED_COUNT = max(1, int(os.getenv("DUMMY_SEED_COUNT", "1000")))
 except ValueError:
     DUMMY_SEED_COUNT = 1000
-KOREA_BOUNDS = [
-    (33.1, 124.5, 38.8, 132.0),  # 전국 육지+섬을 넓게 감싸는 범위 (근사)
+EARTH_RADIUS_KM = 6371.0088
+KOREA_START_ANCHORS: List[Tuple[str, float, float, float]] = [
+    # (name, lat, lon, influence_radius_km)
+    ("Seoul", 37.5665, 126.9780, 55.0),
+    ("Incheon", 37.4563, 126.7052, 35.0),
+    ("Suwon", 37.2636, 127.0286, 40.0),
+    ("Cheonan", 36.8151, 127.1145, 35.0),
+    ("Cheongju", 36.6424, 127.4890, 45.0),
+    ("Daejeon", 36.3504, 127.3845, 45.0),
+    ("Gunsan", 35.9777, 126.7367, 28.0),
+    ("Jeonju", 35.8242, 127.1480, 38.0),
+    ("Gwangju", 35.1595, 126.8526, 42.0),
+    ("Daegu", 35.8714, 128.6014, 55.0),
+    ("Pohang", 36.0190, 129.3498, 35.0),
+    ("Gyeongju", 35.8560, 129.2246, 38.0),
+    ("Busan", 35.1796, 129.0756, 52.0),
+    ("Changwon", 35.2282, 128.6811, 42.0),
+    ("Ulsan", 35.5384, 129.3114, 32.0),
+    ("Gangneung", 37.7519, 128.8761, 55.0),
+    ("Sokcho", 38.2084, 128.5912, 28.0),
+    ("Wonju", 37.3422, 127.9202, 48.0),
+    ("Jeju", 33.4996, 126.5312, 45.0),
+    ("Seogwipo", 33.2537, 126.5583, 30.0),
 ]
+KOREA_SAFE_BANDS = [
+    # (min_lat, max_lat, min_lon, max_lon)
+    (33.0, 34.3, 126.0, 129.8),
+    (34.3, 35.3, 124.7, 129.8),
+    (35.3, 36.0, 124.2, 129.7),
+    (36.0, 36.8, 124.8, 129.3),
+    (36.8, 37.8, 125.4, 129.0),
+    (37.8, 38.6, 126.0, 128.7),
+    # Jeju
+    (33.2, 33.6, 126.2, 127.0),
+]
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    lat1_rad = radians(lat1)
+    lat2_rad = radians(lat2)
+    d_lat = radians(lat2 - lat1)
+    d_lon = radians(lon2 - lon1)
+    a = sin(d_lat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(d_lon / 2) ** 2
+    return 2 * EARTH_RADIUS_KM * asin(sqrt(a))
+
+
+def _is_in_korea_bbox(lat: float, lon: float) -> bool:
+    for min_lat, max_lat, min_lon, max_lon in KOREA_SAFE_BANDS:
+        if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+            return True
+    return False
+
+
+def _inside_korea(lat: float, lon: float) -> bool:
+    # 1) 육지 후보 지역 대역으로 1차 필터링
+    if not _is_in_korea_bbox(lat, lon):
+        return False
+    # 2) 한국 주변 앵커에서 일정 거리 이내면 한국 내부로 간주(해양 유입 방지)
+    for _name, anchor_lat, anchor_lon, radius_km in KOREA_START_ANCHORS:
+        if _haversine_km(lat, lon, anchor_lat, anchor_lon) <= radius_km:
+            return True
+    return False
+
+
+def _seed_pick_radius_km(city_name: str, lat: float, lon: float) -> float:
+    for name, anchor_lat, anchor_lon, radius_km in KOREA_START_ANCHORS:
+        if city_name == name:
+            return radius_km
+        if abs(lat - anchor_lat) < 0.2 and abs(lon - anchor_lon) < 0.2:
+            return radius_km
+    return 25.0
+
+
+def _pick_city_route(routes: Dict[str, Tuple[float, float]]) -> Tuple[str, float, float]:
+    # Mix configured routes and anchors so data isn't generated only from 5 fixed points.
+    candidates: List[Tuple[str, float, float, float]] = [
+        (name, float(lat), float(lon), _seed_pick_radius_km(name, float(lat), float(lon)))
+        for name, (lat, lon) in routes.items()
+    ]
+    candidates.extend((name, lat, lon, radius_km) for name, lat, lon, radius_km in KOREA_START_ANCHORS)
+    if not candidates:
+        candidates = [("Seoul", 37.5665, 126.9780, 55.0)]
+
+    city_name, lat, lon, radius_km = random.choice(candidates)
+    for _ in range(20):
+        max_seed_km = max(6.0, min(radius_km * 0.4, 20.0))
+        heading = random.uniform(0, 360)
+        d_lat, d_lon = haversine_step(random.uniform(0.5, max_seed_km), heading, lat)
+        seed_lat = lat + d_lat
+        seed_lon = lon + d_lon
+        if _inside_korea(seed_lat, seed_lon):
+            return city_name, seed_lat, seed_lon
+    # 최종적으로는 앵커 기준 좌표를 그대로 사용해 seed를 생성
+    return city_name, lat, lon
 
 def _load_dummy_data() -> Dict[str, Any]:
     fallback = {
@@ -107,11 +198,6 @@ def _build_city_routes(data: Dict[str, Any]) -> Dict[str, Tuple[float, float]]:
     if not routes:
         routes = {"서울": (37.5665, 126.9780)}
     return routes
-
-def _pick_city_route(routes: Dict[str, Tuple[float, float]]) -> Tuple[str, float, float]:
-    city = random.choice(list(routes.keys()))
-    lat, lon = routes[city]
-    return city, lat, lon
 
 def _coerce_float(value: Any, default: float) -> float:
     try:
@@ -202,8 +288,24 @@ def _build_tire_pressure(raw: Optional[Dict[str, Any]]) -> Dict[str, float]:
         "front_left": float(raw.get("front_left", random.uniform(33.0, 36.0))),
         "front_right": float(raw.get("front_right", random.uniform(33.0, 36.0))),
         "rear_left": float(raw.get("rear_left", random.uniform(33.0, 36.0))),
-        "rear_right": float(raw.get("rear_right", random.uniform(33.0, 36.0))),
+                "rear_right": float(raw.get("rear_right", random.uniform(33.0, 36.0))),
     }
+
+
+def _normalize_seed_point(city_name: str, lat: float, lon: float) -> Tuple[str, float, float]:
+    # Keep seeds within the Korea-only area. Try a few retries if jitter pushes it out.
+    for _ in range(15):
+        jitter_lat = lat + random.uniform(-MAX_SEED_JITTER_DEG * 4, MAX_SEED_JITTER_DEG * 4)
+        jitter_lon = lon + random.uniform(-MAX_SEED_JITTER_DEG * 4, MAX_SEED_JITTER_DEG * 4)
+        if _inside_korea(jitter_lat, jitter_lon):
+            return city_name, jitter_lat, jitter_lon
+    # If jitter repeatedly fails (very rare), fall back to a nearby known anchor.
+    if KOREA_START_ANCHORS:
+        anchor_name, anchor_lat, anchor_lon, radius_km = random.choice(KOREA_START_ANCHORS)
+        heading = random.uniform(0, 360)
+        d_lat, d_lon = haversine_step(min(radius_km * 0.05, 5.0), heading, anchor_lat)
+        return anchor_name, anchor_lat + d_lat, anchor_lon + d_lon
+    return city_name, lat, lon
 
 def generate_vehicle_seeds() -> List[VehicleState]:
     seeds: List[VehicleState] = []
@@ -223,8 +325,7 @@ def generate_vehicle_seeds() -> List[VehicleState]:
             else:
                 city_name, lat, lon = _pick_city_route(CITY_ROUTES)
 
-            lat += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
-            lon += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
+            city_name, lat, lon = _normalize_seed_point(city_name, lat, lon)
             trip_state = _coerce_str(raw.get("trip_state"), random.choice(["PARK", "IDLE"]))
             ignition_on = bool(raw.get("ignition_on", trip_state == "DRIVE"))
 
@@ -254,8 +355,7 @@ def generate_vehicle_seeds() -> List[VehicleState]:
 
     for idx in range(len(seeds), target_count):
         city_name, lat, lon = _pick_city_route(CITY_ROUTES)
-        lat += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
-        lon += random.uniform(-MAX_SEED_JITTER_DEG, MAX_SEED_JITTER_DEG)
+        city_name, lat, lon = _normalize_seed_point(city_name, lat, lon)
         vehicle_num = idx + 1
         vehicle_id = f"CAR-{1000 + vehicle_num}"
         vin = f"KICF9AA{100000000 + vehicle_num:09d}"
@@ -297,12 +397,6 @@ def haversine_step(distance_km: float, heading_deg: float, lat: float) -> Tuple[
     d_lat = (distance_m * cos(radians(heading_deg))) / 111_000.0
     d_lon = (distance_m * sin(radians(heading_deg))) / (111_000.0 * max(0.2, cos(radians(lat))))
     return d_lat, d_lon
-
-def _inside_korea(lat: float, lon: float) -> bool:
-    for lat_min, lon_min, lat_max, lon_max in KOREA_BOUNDS:
-        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
-            return True
-    return False
 
 def _move_within_area(vehicle: VehicleState, move_km: float) -> Tuple[float, float]:
     """이동 후 좌표가 영역 밖이면 헤딩 반전 후 보정."""
@@ -643,3 +737,4 @@ async def shutdown_event() -> None:
     for task in producer_tasks:
         task.cancel()
     await asyncio.gather(*producer_tasks, return_exceptions=True)
+
