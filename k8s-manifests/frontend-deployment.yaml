@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: hyunjun0907/k8s-mini-frontend:latest
+          image: hyunjun0907/k8s-mini-frontend:v1.1
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 80
@@ -29,8 +29,16 @@ spec:
                 secretKeyRef:
                   name: mobility-secret
                   key: VWORLD_API_KEY
-            - name: QUERY_API_URL          # 추가: nginx envsubst가 proxy_pass 경로 치환에 사용
-              value: "http://connected-car-query-svc"
+            - name: QUERY_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: QUERY_API_URL
+            - name: VITE_QUERY_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: FRONTEND_QUERY_API_URL
           readinessProbe:
             httpGet:
               path: /

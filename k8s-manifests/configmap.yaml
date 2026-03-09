@@ -30,6 +30,8 @@ data:
   # --- API Ports ---
   QUERY_API_PORT: "8000"
   QUERY_API_HOST: "0.0.0.0"
+  FRONTEND_QUERY_API_URL: "/api"
+  QUERY_API_URL: "http://connected-car-query-svc"
 
   # --- Dummy Data Server ---
   INGEST_SERVER_URL: "http://connected-car-command-svc/api/query/telemetry"
