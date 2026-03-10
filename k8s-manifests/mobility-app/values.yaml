@@ -1,13 +1,13 @@
 frontend:
   replicaCount: 1
   image:
-    repository: hyunjun0907/k8s-mini-frontend
+    repository: 10.0.2.111/k8s-mini/k8s-mini-frontend
     tag: latest
 
 command:
   api:
     replicaCount: 2
-    image: "sbddjt/telemetry-ingest-api:v1"
+    image: "10.0.2.111/k8s-mini/telemetry-ingest-api:v1"
     hpa:
       enabled: true
       minReplicas: 2
@@ -15,13 +15,13 @@ command:
       cpuUtilization: 50
   consumer:
     replicaCount: 2
-    image: "sbddjt/telemetry-mongo-consumer:v1"
+    image: "10.0.2.111/k8s-mini/telemetry-mongo-consumer:v1"
 
 
 query:
   api:
     replicaCount: 2
-    image: "hyunjun0907/mobility-query-api:v1"
+    image: "10.0.2.111/k8s-mini/mobility-query-api:v1"
     hpa:
       enabled: true
       minReplicas: 2
@@ -29,7 +29,7 @@ query:
       cpuUtilization: 50
   consumer:
     replicaCount: 2
-    image: "hyunjun0907/mobility-query-consumer:v1"
+    image: "10.0.2.111/k8s-mini/mobility-query-consumer:v1"
 
 persistence:
   storageClass: "nfs-storage"
