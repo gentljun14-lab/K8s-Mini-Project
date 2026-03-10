@@ -1,0 +1,56 @@
+frontend:
+  replicaCount: 1
+  image:
+    repository: hyunjun0907/k8s-mini-frontend
+    tag: latest
+
+command:
+  api:
+    replicaCount: 2
+    image: "sbddjt/telemetry-ingest-api:v1"
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      cpuUtilization: 50
+  consumer:
+    replicaCount: 2
+    image: "sbddjt/telemetry-mongo-consumer:v1"
+
+
+query:
+  api:
+    replicaCount: 2
+    image: "hyunjun0907/mobility-query-api:v1"
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      cpuUtilization: 50
+  consumer:
+    replicaCount: 2
+    image: "hyunjun0907/mobility-query-consumer:v1"
+
+persistence:
+  storageClass: "nfs-storage"
+
+mongo:
+  image: "mongo:7"
+  storage: "5Gi"
+  retention:
+    days: "7"
+
+redis:
+  image: "redis:7-alpine"
+  storage: "2Gi"
+
+kafka:
+  image: "apache/kafka:3.9.0"
+  storage: "10Gi"
+
+secrets:
+  mongoRootUsername: "admin"
+  mongoRootPassword: "mongo1234"
+  mongoUri: "mongodb://admin:mongo1234@mongo-svc:27017/?authSource=admin"
+  redisPassword: "redis1234"
+  vworldApiKey: "323FDD38-6DFC-319E-94AF-EAC78876A2A6"
