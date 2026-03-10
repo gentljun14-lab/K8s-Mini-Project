@@ -1,0 +1,43 @@
+{{- if .Values.command.api.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: command-api-hpa
+  namespace: {{ .Release.Namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: connected-car-command
+  minReplicas: {{ .Values.command.api.hpa.minReplicas }}      # 평소에 유지할 최소 파드 수
+  maxReplicas: {{ .Values.command.api.hpa.maxReplicas }}     # 트래픽 폭주 시 늘릴 최대 파드 수
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.command.api.hpa.cpuUtilization }}
+{{- end }} # CPU 사용률이 50%를 넘으면 스케일 아웃
+---
+{{- if .Values.query.api.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: query-api-hpa
+  namespace: {{ .Release.Namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: connected-car-query
+  minReplicas: {{ .Values.query.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.query.api.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.query.api.hpa.cpuUtilization }}
+{{- end }}

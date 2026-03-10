@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connected-car-command
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: connected-car-command
+    tier: backend
+    cqrs: command
+spec:
+  replicas: {{ .Values.command.api.replicaCount }}
+  selector:
+    matchLabels:
+      app: connected-car-command
+  template:
+    metadata:
+      labels:
+        app: connected-car-command
+        tier: backend
+        cqrs: command
+    spec:
+      containers:
+        - name: command-api
+          image: "{{ .Values.command.api.image }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          envFrom:
+            - configMapRef:
+                name: mobility-config
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connected-car-command-svc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: connected-car-command
+spec:
+  type: ClusterIP
+  selector:
+    app: connected-car-command
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connected-car-command-consumer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: connected-car-command-consumer
+    tier: worker
+    cqrs: command
+spec:
+  replicas: {{ .Values.command.consumer.replicaCount }}
+  selector:
+    matchLabels:
+      app: connected-car-command-consumer
+  template:
+    metadata:
+      labels:
+        app: connected-car-command-consumer
+        tier: worker
+        cqrs: command
+    spec:
+      containers:
+        - name: command-consumer
+          image: "{{ .Values.command.consumer.image }}"
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "128Mi"
+            limits:
+              cpu: "600m"
+              memory: "256Mi"
+          env:
+            - name: KAFKA_GROUP_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: KAFKA_GROUP_ID_COMMAND
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: MONGO_URI
+          envFrom:
+            - configMapRef:
+                name: mobility-config

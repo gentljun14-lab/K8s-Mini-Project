@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongo
+spec:
+  serviceName: mongo-hl-svc
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo
+        image: "{{ .Values.mongo.image }}"
+        args: ["--auth", "--wiredTigerCacheSizeGB", "0.25"]
+        env:
+          - name: MONGO_INITDB_ROOT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: mobility-secret
+                key: MONGO_INITDB_ROOT_USERNAME
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mobility-secret
+                key: MONGO_INITDB_ROOT_PASSWORD
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongo-data
+          mountPath: /data/db
+        livenessProbe:
+          tcpSocket:
+            port: 27017
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: 27017
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.mongo.storage }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-hl-svc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongo
+spec:
+  clusterIP: None
+  selector:
+    app: mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-svc
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: mongo
+  ports:
+  - port: 27017
+    targetPort: 27017
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongo-telemetry-retention
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mongo
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  timeZone: UTC
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: retention-cleaner
+              image: "{{ .Values.mongo.image }}"
+              envFrom:
+                - configMapRef:
+                    name: mobility-config
+              env:
+                - name: MONGO_URI
+                  valueFrom:
+                    secretKeyRef:
+                      name: mobility-secret
+                      key: MONGO_URI
+              command:
+                - "bash"
+                - "-lc"
+                - |
+                  set -eu
+                  TTL_DAYS="${MONGO_TTL_DAYS:-7}"
+                  mongosh "${MONGO_URI:-mongodb://mongo-svc:27017}" --eval '
+                    const dbName = process.env.MONGO_DB || "car_db";
+                    const collection = process.env.MONGO_COLLECTION || "telemetry_history";
+                    const ttlDays = Number(process.env.MONGO_TTL_DAYS || 7);
+                    const cutoffDate = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
+                    const db = db.getSiblingDB(dbName);
+                    db[collection].createIndex({ created_at: 1 }, { expireAfterSeconds: ttlDays * 24 * 60 * 60, name: "telemetry_created_at_ttl" });
+                    const query = {
+                      $or: [
+                        { created_at: { $lt: cutoffDate } },
+                        { received_at: { $lt: cutoffDate } },
+                        { _consumed_at: { $lt: cutoffDate } }
+                      ]
+                    };
+                    const result = db[collection].deleteMany(query);
+                    printjson({ removed_count: result.deletedCount, cutoff: cutoffDate.toISOString(), ttlDays, ok: result.ok });
+                  '
+
+
+
+
