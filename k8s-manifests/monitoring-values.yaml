@@ -1,0 +1,5 @@
+grafana:
+  grafana.ini:
+    server:
+      root_url: "http://192.168.202.243:50031/grafana/"
+      serve_from_sub_path: true
