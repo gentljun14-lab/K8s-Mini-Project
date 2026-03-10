@@ -19,6 +19,8 @@ spec:
         tier: backend
         cqrs: command
     spec:
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       containers:
         - name: command-api
           image: "{{ .Values.command.api.image }}"
@@ -89,6 +91,8 @@ spec:
         tier: worker
         cqrs: command
     spec:
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       containers:
         - name: command-consumer
           image: "{{ .Values.command.consumer.image }}"

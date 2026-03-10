@@ -7,7 +7,7 @@ metadata:
     app: connected-car-frontend
     tier: frontend
 spec:
-  replicas: {{ .Values.frontend.replicaCount }} # 변수 뚫기 1
+  replicas: {{ .Values.frontend.replicaCount }}
   selector:
     matchLabels:
       app: connected-car-frontend
@@ -17,10 +17,11 @@ spec:
         app: connected-car-frontend
         tier: frontend
     spec:
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       containers:
         - name: frontend
-          # 변수 뚫기 2 (문자열 조합)
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          image: "{{ .Values.frontend.image }}"
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 80
