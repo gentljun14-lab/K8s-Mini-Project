@@ -8,7 +8,7 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <h1>🚗 Connected Car Dashboard</h1>
+        <h1>🚗 Connected Car Dashboard - k8s mini project</h1>
       </header>
       <div className="map-wrapper">
         {loading && <div className="status">로딩 중...</div>}
