@@ -5,7 +5,7 @@ pipeline {
         HARBOR_REGISTRY = "10.0.2.111:80"
         HARBOR_PROJECT  = "k8s-mini"
         IMAGE_TAG       = "v${BUILD_NUMBER}"
-        HARBOR_CREDS    = "harbor-credentials"   // Jenkins Credentials ID
+        HARBOR_CREDS    = "harbor-credentials"
         NAMESPACE       = "miniproject"
         HELM_RELEASE    = "mobility-release"
         HELM_CHART_PATH = "k8s-manifests/mobility-app"
@@ -29,8 +29,8 @@ pipeline {
                     sh """
                         docker login ${HARBOR_REGISTRY} -u ${HARBOR_USER} -p ${HARBOR_PASS}
 
-                        # ── Command API ──────────────────────────────────
-                        docker build -t ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG} ./src-command
+                        # ── Command API (ingest) ──────────────────────────
+                        docker build -t ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG} ./src-command/ingest
                         docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG}
 
                         # ── Command Consumer ─────────────────────────────
@@ -38,7 +38,7 @@ pipeline {
                         docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-mongo-consumer:${IMAGE_TAG}
 
                         # ── Query API ────────────────────────────────────
-                        docker build -t ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-api:${IMAGE_TAG} ./src-query
+                        docker build -t ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-api:${IMAGE_TAG} ./src-query/api
                         docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-api:${IMAGE_TAG}
 
                         # ── Query Consumer ───────────────────────────────
