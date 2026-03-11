@@ -1,9 +1,0 @@
-controller:
-  replicaCount: 3
-  nodeSelector:
-    kubernetes.io/os: linux
-  service:
-    type: NodePort
-    nodePorts:
-      http: 30080
-      https: 30443
