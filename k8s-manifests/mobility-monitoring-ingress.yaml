@@ -25,3 +25,10 @@ spec:
                 name: mobility-kube-prometheus-s-prometheus
                 port:
                   number: 9090
+          - path: /alertmanager
+            pathType: Prefix
+            backend:
+              service:
+                name: mobility-kube-prometheus-s-alertmanager
+                port:
+                  number: 9093
