@@ -10,6 +10,9 @@ prometheus:
     routePrefix: "/prometheus"
 
 alertmanager:
+  alertmanagerSpec:
+    externalUrl: "http://192.168.202.243:50031/alertmanager"
+    routePrefix: "/alertmanager"
   config:
     global:
       resolve_timeout: 5m
@@ -25,5 +28,5 @@ alertmanager:
     receivers:
       - name: discord
         webhook_configs:
-          - url: ""
+          - url: "https://discord.com/api/webhooks/1481186875728330823/NmF9TNZT_Qm8gOxLozYUt0a2CpNPPcKM0eOfwVjuY2MdBm-TxydtXRuRU-uYJ0xGhy3d"
             send_resolved: true
