@@ -13,6 +13,9 @@ pipeline {
     IMAGE_TAG       = "${env.BUILD_NUMBER}"
     HARBOR_CREDS    = "harbor-credentials"
     NAMESPACE       = "miniproject"
+    NFS_NAMESPACE   = "kube-system"
+    NFS_RELEASE     = "nfs-provisioner"
+    NFS_CHART_PATH  = "k8s-manifests/nfs-storage"
     PROJECT_DIR     = "."
     HELM_TIMEOUT    = "10m"
     HELM_INFRA_RELEASE = "mobility-infra"
@@ -82,6 +85,51 @@ pipeline {
             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/k8s-mini-frontend:${IMAGE_TAG}
           '''
         }
+      }
+    }
+
+    stage('Deploy NFS Infra') {
+      steps {
+        sh '''
+          set -eu
+          cd ${PROJECT_DIR}
+
+          if [ -d "${NFS_CHART_PATH}" ]; then
+            echo "[nfs] installing/updating nfs subdir provisioner"
+
+            NFS_VALUES=""
+            if [ -f "${NFS_CHART_PATH}/values.yaml" ]; then
+              NFS_VALUES="-f ${NFS_CHART_PATH}/values.yaml"
+            fi
+
+            helm upgrade --install ${NFS_RELEASE} ${NFS_CHART_PATH} \
+              -n ${NFS_NAMESPACE} --create-namespace \
+              --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
+              ${NFS_VALUES}
+
+            kubectl rollout status deployment/nfs-subdir-external-provisioner \
+              -n ${NFS_NAMESPACE} --timeout=120s
+
+            kubectl get sc nfs-storage
+            POD_NAME=$(kubectl get pod -n ${NFS_NAMESPACE} \
+              -l app.kubernetes.io/name=nfs-subdir-external-provisioner \
+              -o jsonpath='{.items[0].metadata.name}')
+            if [ -z "${POD_NAME}" ]; then
+              POD_NAME=$(kubectl get pod -n ${NFS_NAMESPACE} \
+                -l app=nfs-subdir-external-provisioner \
+                -o jsonpath='{.items[0].metadata.name}')
+            fi
+            if [ -z "${POD_NAME}" ]; then
+              echo "[nfs] provisioner pod not found"
+              exit 1
+            fi
+
+            kubectl -n ${NFS_NAMESPACE} exec "${POD_NAME}" -- sh -c "touch /persistentvolumes/.probe && rm -f /persistentvolumes/.probe"
+            echo "[nfs] probe write check passed"
+          else
+            echo "[nfs] chart path not found: ${NFS_CHART_PATH}. skip."
+          fi
+        '''
       }
     }
 
