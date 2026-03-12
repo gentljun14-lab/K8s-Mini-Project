@@ -66,18 +66,21 @@ pipeline {
 
     stage('Deploy to Kubernetes') {
       steps {
-        sh """
-          set -eu
+        withCredentials([file(credentialsId: 'mobility-secret-values', variable: 'SECRET_VALUES_FILE')]) {
+          sh '''
+            set -eu
 
-          helm upgrade --install ${HELM_RELEASE} ${HELM_CHART_PATH} \
-            -n ${NAMESPACE} --create-namespace \
-            --wait --timeout 10m --atomic --cleanup-on-fail \
-            --set command.api.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG} \
-            --set command.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-mongo-consumer:${IMAGE_TAG} \
-            --set query.api.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-api:${IMAGE_TAG} \
-            --set query.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-consumer:${IMAGE_TAG} \
-            --set frontend.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/k8s-mini-frontend:${IMAGE_TAG}
-        """
+            helm upgrade --install ${HELM_RELEASE} ${HELM_CHART_PATH} \
+              -n ${NAMESPACE} --create-namespace \
+              --wait --timeout 10m --atomic --cleanup-on-fail \
+              -f ${SECRET_VALUES_FILE} \
+              --set command.api.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG} \
+              --set command.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-mongo-consumer:${IMAGE_TAG} \
+              --set query.api.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-api:${IMAGE_TAG} \
+              --set query.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-consumer:${IMAGE_TAG} \
+              --set frontend.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/k8s-mini-frontend:${IMAGE_TAG}
+          '''
+        }
       }
     }
   }
