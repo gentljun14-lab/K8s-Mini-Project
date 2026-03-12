@@ -3,7 +3,7 @@ import { useVehicles } from './hooks/useVehicles'
 import './App.css'
 
 function App() {
-  const { vehicles, loading, error, lastUpdated } = useVehicles(3000)
+  const { vehicles, loading, error, lastUpdated } = useVehicles(1000)
 
   return (
     <div className="app-container">
