@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet'
+import { useMemo, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import type { Vehicle } from '../types/vehicle'
@@ -71,20 +72,54 @@ function buildLabel(vehicle: Vehicle) {
   return { model, driver, city }
 }
 
+function inBounds(vehicles: Vehicle[], bounds: L.LatLngBounds | null): Vehicle[] {
+  if (!bounds) {
+    return vehicles
+  }
+
+  return vehicles.filter((vehicle) => {
+    const pos = getVehicleLocation(vehicle)
+    if (!pos) {
+      return false
+    }
+
+    const latLng = L.latLng(pos.latitude, pos.longitude)
+    return bounds.contains(latLng)
+  })
+}
+
+function MapBoundsTracker({
+  onBoundsChange,
+}: {
+  onBoundsChange: (bounds: L.LatLngBounds) => void
+}) {
+  useMapEvents({
+    load: (event) => onBoundsChange(event.target.getBounds()),
+    moveend: (event) => onBoundsChange(event.target.getBounds()),
+    zoomend: (event) => onBoundsChange(event.target.getBounds()),
+  })
+
+  return null
+}
+
 export default function VehicleMap({ vehicles }: VehicleMapProps) {
+  const [bounds, setBounds] = useState<L.LatLngBounds | null>(null)
+  const visibleVehicles = useMemo(() => inBounds(vehicles, bounds), [vehicles, bounds])
+
   return (
     <MapContainer
       center={[36.5, 127.5]}
       zoom={7}
       style={{ width: '100%', height: '100%' }}
     >
+      <MapBoundsTracker onBoundsChange={setBounds} />
       <TileLayer
         url={TILE_URL}
         attribution='&copy; OpenStreetMap'
         maxZoom={19}
       />
 
-      {vehicles
+      {visibleVehicles
         .map((vehicle) => {
           const pos = getVehicleLocation(vehicle)
           if (!pos) {
