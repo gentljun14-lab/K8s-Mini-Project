@@ -26,6 +26,25 @@ def _coerce_str(value, default=None):
   return str(value)
 
 
+def _pick_vehicle_meta(vehicle_data: dict, key: str, default: str = "") -> str:
+  raw = vehicle_data.get("raw")
+  raw_vehicle = raw.get("vehicle") if isinstance(raw, dict) else None
+  vehicle_root = vehicle_data.get("vehicle")
+  candidates = (
+    raw_vehicle.get(key) if isinstance(raw_vehicle, dict) else None,
+    raw.get(key) if isinstance(raw, dict) else None,
+    vehicle_root.get(key) if isinstance(vehicle_root, dict) else None,
+    vehicle_data.get(key),
+  )
+  for value in candidates:
+    if value is None:
+      continue
+    text = str(value).strip()
+    if text:
+      return text
+  return default
+
+
 def _build_snapshot(vehicle_data: dict) -> dict:
   vehicle_id = vehicle_data.get("vehicle_id", vehicle_data.get("vehicle", {}).get("vehicle_id"))
   if not vehicle_id:
@@ -57,26 +76,8 @@ def _build_snapshot(vehicle_data: dict) -> dict:
     "longitude": longitude,
     "city": city,
     "recent_event": vehicle_data.get("recent_event"),
-    "model": _coerce_str(
-      (
-        vehicle_data.get("raw", {})
-        .get("vehicle", {})
-        .get("model", vehicle_data.get("vehicle", {}).get("model"))
-        if isinstance(vehicle_data.get("raw", {}).get("vehicle"), dict)
-        else vehicle_data.get("vehicle", {}).get("model")
-      ),
-      ""
-    ),
-    "driver": _coerce_str(
-      (
-        vehicle_data.get("raw", {})
-        .get("vehicle", {})
-        .get("driver", vehicle_data.get("vehicle", {}).get("driver"))
-        if isinstance(vehicle_data.get("raw", {}).get("vehicle"), dict)
-        else vehicle_data.get("vehicle", {}).get("driver")
-      ),
-      ""
-    ),
+    "model": _pick_vehicle_meta(vehicle_data, "model", ""),
+    "driver": _pick_vehicle_meta(vehicle_data, "driver", ""),
   }
 
 

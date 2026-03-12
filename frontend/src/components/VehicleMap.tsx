@@ -64,8 +64,23 @@ function getVehicleLocation(vehicle: Vehicle): VehiclePoint | null {
 }
 
 function buildVehicleLabel(vehicle: Vehicle) {
-  const model = vehicle.raw?.vehicle?.model ?? 'Unknown'
-  const driver = vehicle.raw?.vehicle?.driver ?? 'Unknown'
+  const model =
+    (typeof vehicle.raw?.vehicle?.model === 'string' && vehicle.raw.vehicle.model.trim())
+      ? vehicle.raw.vehicle.model.trim()
+      : ((typeof vehicle.raw?.model === 'string' && vehicle.raw.model.trim())
+        ? vehicle.raw.model.trim()
+        : ((typeof (vehicle as any).model === 'string' && (vehicle as any).model.trim())
+          ? (vehicle as any).model.trim()
+          : 'Unknown'))
+
+  const driver =
+    (typeof vehicle.raw?.vehicle?.driver === 'string' && vehicle.raw.vehicle.driver.trim())
+      ? vehicle.raw.vehicle.driver.trim()
+      : ((typeof vehicle.raw?.driver === 'string' && vehicle.raw.driver.trim())
+        ? vehicle.raw.driver.trim()
+        : ((typeof (vehicle as any).driver === 'string' && (vehicle as any).driver.trim())
+          ? (vehicle as any).driver.trim()
+          : 'Unknown'))
   const city = vehicle.raw?.location?.city ?? '-'
   const event = vehicle.recent_event ?? '-'
   const state = vehicle.state || '-'

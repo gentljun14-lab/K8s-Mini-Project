@@ -64,9 +64,32 @@ def _to_int(value: Any, default: int = 0) -> int:
 
 
 def _coerce_str(value: Any, default: str = "") -> str:
+  if value is None:
+    return default
+  return str(value)
+
+
+def _coalesce_str(*values: Any) -> str:
+  for value in values:
     if value is None:
-        return default
-    return str(value)
+      continue
+    value = str(value).strip()
+    if value:
+      return value
+  return ""
+
+
+def _extract_vehicle_meta(payload: Dict[str, Any], key: str, default: str = "") -> str:
+  raw = payload.get("raw") if isinstance(payload.get("raw"), dict) else {}
+  raw_vehicle = raw.get("vehicle") if isinstance(raw.get("vehicle"), dict) else {}
+  vehicle_root = payload.get("vehicle") if isinstance(payload.get("vehicle"), dict) else {}
+  return _coalesce_str(
+    raw_vehicle.get(key),
+    payload.get(key),
+    vehicle_root.get(key),
+    raw.get(key),
+    default,
+  )
 
 
 def _parse_epoch_ms(value: Any) -> int:
@@ -154,6 +177,8 @@ def _build_full_vehicle(payload: Dict[str, Any]) -> Dict[str, Any]:
         "state": _coerce_str(payload.get("state") or raw_trip.get("state") or "UNKNOWN"),
         "speed_kmh": _to_number(payload.get("speed_kmh", raw_trip.get("speed_kmh"))),
         "soc_pct": _to_number(payload.get("soc_pct", raw_battery.get("soc_pct"))),
+        "model": _extract_vehicle_meta(payload, "model", ""),
+        "driver": _extract_vehicle_meta(payload, "driver", ""),
         "location": {
             "latitude": latitude,
             "longitude": longitude,
@@ -209,8 +234,8 @@ def _build_vehicle_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
         "longitude": longitude,
         "city": _coerce_str(city),
         "recent_event": payload.get("recent_event"),
-        "model": _coerce_str(raw_vehicle.get("model"), ""),
-        "driver": _coerce_str(raw_vehicle.get("driver"), ""),
+        "model": _extract_vehicle_meta(payload, "model", ""),
+        "driver": _extract_vehicle_meta(payload, "driver", ""),
     }
 
 
@@ -252,6 +277,8 @@ def _build_vehicle_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
         "longitude": longitude,
         "city": city,
         "recent_event": payload.get("recent_event"),
+        "model": _extract_vehicle_meta(payload, "model", ""),
+        "driver": _extract_vehicle_meta(payload, "driver", ""),
     }
 
 

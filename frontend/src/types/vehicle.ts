@@ -45,6 +45,8 @@ export interface Vehicle {
   location?: VehicleLocation
   recent_event?: string
   raw?: RawVehicleData
+  model?: string
+  driver?: string
 }
 
 export interface VehicleSnapshot {
