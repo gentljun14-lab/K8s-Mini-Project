@@ -17,6 +17,8 @@ pipeline {
     NFS_RELEASE     = "nfs-provisioner"
     NFS_CHART_PATH  = "k8s-manifests/nfs-storage"
     PROJECT_DIR     = "."
+    NFS_PVC_LIST    = "mongo-data-mongo-0 redis-data-redis-0 kafka-data-kafka-0"
+    NFS_PV_LIST     = "mongo-pv-nfs-0 redis-pv-nfs-0 kafka-pv-nfs-0"
     HELM_TIMEOUT    = "10m"
     HELM_INFRA_RELEASE = "mobility-infra"
     HELM_INFRA_CHART_PATH = "k8s-manifests/mobility-infra"
@@ -28,6 +30,7 @@ pipeline {
     HELM_FRONTEND_CHART_PATH = "k8s-manifests/mobility-frontend"
     NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
     HARBOR_EMAIL = "ci@k8s-mini.local"
+    LEGACY_NFS_PROVISIONER = "cluster.local/nfs-provisioner-nfs-subdir-external-provisioner"
   }
 
   stages {
@@ -115,6 +118,75 @@ pipeline {
               -p '{"imagePullSecrets":[{"name":"harbor-secret"}]}'
           '''
         }
+      }
+    }
+
+    stage('Reset NFS stateful volumes') {
+      steps {
+        sh '''
+          set -eu
+          cd ${PROJECT_DIR}
+
+          for pvc in ${NFS_PVC_LIST}; do
+            if kubectl get pvc "${pvc}" -n ${NAMESPACE} >/dev/null 2>&1; then
+              pvc_phase=$(kubectl get pvc "${pvc}" -n ${NAMESPACE} -o jsonpath='{.status.phase}')
+              pvc_prov=$(kubectl get pvc "${pvc}" -n ${NAMESPACE} -o jsonpath='{.metadata.annotations.volume\\.kubernetes\\.io/storage-provisioner}' 2>/dev/null || true)
+              pvc_prov_beta=$(kubectl get pvc "${pvc}" -n ${NAMESPACE} -o jsonpath='{.metadata.annotations.volume\\.beta\\.kubernetes\\.io/storage-provisioner}' 2>/dev/null || true)
+
+              if [ "${pvc_phase}" != "Bound" ] || \
+                 [ "${pvc_prov}" = "${LEGACY_NFS_PROVISIONER}" ] || \
+                 [ "${pvc_prov_beta}" = "${LEGACY_NFS_PROVISIONER}" ]; then
+                echo "[storage] deleting pvc ${pvc} (phase=${pvc_phase}, provisioner=${pvc_prov}${pvc_prov_beta:+/${pvc_prov_beta}})"
+                kubectl delete pvc "${pvc}" -n ${NAMESPACE} --ignore-not-found=true
+              else
+                echo "[storage] keep pvc ${pvc} (phase=${pvc_phase}, provisioner=${pvc_prov}${pvc_prov_beta:+/${pvc_prov_beta}})"
+              fi
+            fi
+          done
+
+          for pv in ${NFS_PV_LIST}; do
+            if kubectl get pv "${pv}" >/dev/null 2>&1; then
+              pv_phase=$(kubectl get pv "${pv}" -o jsonpath='{.status.phase}')
+              pv_claim=$(kubectl get pv "${pv}" -o jsonpath='{.spec.claimRef.name}' 2>/dev/null || true)
+              pv_claim_ns=$(kubectl get pv "${pv}" -o jsonpath='{.spec.claimRef.namespace}' 2>/dev/null || true)
+              if [ "${pv_phase}" = "Released" ]; then
+                echo "[storage] deleting released pv ${pv} (claim=${pv_claim_ns}/${pv_claim})"
+                kubectl delete pv "${pv}" --ignore-not-found=true
+              elif [ "${pv_phase}" = "Bound" ] && [ "${pv_claim}" != "" ] && \
+                   ! kubectl get pvc "${pv_claim}" -n "${pv_claim_ns}" >/dev/null 2>&1; then
+                echo "[storage] deleting orphan bound pv ${pv} (missing claim=${pv_claim_ns}/${pv_claim})"
+                kubectl delete pv "${pv}" --ignore-not-found=true
+              else
+                echo "[storage] keep pv ${pv} (phase=${pv_phase}, claim=${pv_claim_ns}/${pv_claim})"
+              fi
+            fi
+          done
+        '''
+      }
+    }
+
+    stage('Remove legacy NFS provisioner') {
+      steps {
+        sh '''
+          set -eu
+          cd ${PROJECT_DIR}
+
+          for ns in ${NFS_NAMESPACE} default; do
+            kubectl delete deployment -n "${ns}" nfs-subdir-external-provisioner --ignore-not-found=true || true
+            kubectl delete statefulset -n "${ns}" nfs-subdir-external-provisioner --ignore-not-found=true || true
+            kubectl delete daemonset -n "${ns}" nfs-subdir-external-provisioner --ignore-not-found=true || true
+            kubectl delete role,rolebinding,serviceaccount -n "${ns}" nfs-provisioner-nfs-subdir-external-provisioner --ignore-not-found=true || true
+          done
+
+          if command -v helm >/dev/null 2>&1; then
+            helm uninstall ${NFS_RELEASE} -n ${NFS_NAMESPACE} --ignore-not-found=true || true
+          fi
+
+          if kubectl get storageclass nfs-storage >/dev/null 2>&1; then
+            kubectl annotate storageclass nfs-storage "storageclass.kubernetes.io/is-default-class-" --overwrite || true
+            kubectl annotate storageclass nfs-storage "storageclass.kubernetes.io/is-default-class=true" --overwrite || true
+          fi
+        '''
       }
     }
 
