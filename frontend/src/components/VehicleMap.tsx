@@ -230,15 +230,15 @@ const VehicleMarker = memo(function VehicleMarker({
             <>
               {label.model} / {label.driver}
               <br />
-              상태: {label.state} | 속도: {label.speed} km/h | SOC: {label.soc}%
-              <br />
               이벤트: {label.event}
+              <br />
+              좌표: {pos.latitude.toFixed(6)}, {pos.longitude.toFixed(6)}
               <br />
             </>
           ) : null}
           {showStatusOverlay ? (
             <span>
-              좌표: {pos.latitude.toFixed(6)}, {pos.longitude.toFixed(6)}
+              상태: {label.state} | 속도: {label.speed} km/h | SOC: {label.soc}%
             </span>
           ) : null}
         </Tooltip>

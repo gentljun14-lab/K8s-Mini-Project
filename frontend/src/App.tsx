@@ -11,7 +11,7 @@ function App() {
   })
 
   const [showStatusOverlay, setShowStatusOverlay] = useState(true)
-  const [showSnapshotLabel, setShowSnapshotLabel] = useState(true)
+  const [showSnapshotLabel, setShowSnapshotLabel] = useState(false)
   const [focusTracking, setFocusTracking] = useState(true)
   const [focusedVehicleId, setFocusedVehicleId] = useState<string | null>(null)
   const [focusSearchText, setFocusSearchText] = useState('')
