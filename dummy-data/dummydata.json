@@ -77,7 +77,5 @@
     "firmware_ver": "CCU-1.6.3",
     "sensor_health": "good"
   },
-  "events": [
-    "교차로 대기 중"
-  ]
+  "events": ["원격 진단이 정상입니다"]
 }
