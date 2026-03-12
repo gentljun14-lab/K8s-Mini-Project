@@ -14,6 +14,7 @@ function App() {
   const [showSnapshotLabel, setShowSnapshotLabel] = useState(true)
   const [focusTracking, setFocusTracking] = useState(true)
   const [focusedVehicleId, setFocusedVehicleId] = useState<string | null>(null)
+  const [focusSearchText, setFocusSearchText] = useState('')
   const [replayMode, setReplayMode] = useState(false)
   const [replaySpeed, setReplaySpeed] = useState(1)
   const [replayIndex, setReplayIndex] = useState(0)
@@ -40,13 +41,47 @@ function App() {
     if (!focusedVehicleId && vehicles.length > 0) {
       setFocusedVehicleId(vehicles[0].vehicle_id)
     }
+
+    if (focusedVehicleId && vehicles.length > 0 && !vehicles.some((v) => v.vehicle_id === focusedVehicleId)) {
+      setFocusedVehicleId(vehicles[0].vehicle_id)
+    }
   }, [focusTracking, focusedVehicleId, vehicles])
+
+  const vehicleOptions = useMemo(() => {
+    const ids = new Set<string>()
+    vehicles.forEach((vehicle) => {
+      ids.add(vehicle.vehicle_id)
+    })
+    return [...ids].sort((a, b) => a.localeCompare(b))
+  }, [vehicles])
+
+  useEffect(() => {
+    if (!focusSearchText && focusedVehicleId) {
+      setFocusSearchText(focusedVehicleId)
+    }
+  }, [focusedVehicleId, focusSearchText])
 
   useEffect(() => {
     if (!focusTracking) {
       setFocusedVehicleId(null)
+      setFocusSearchText('')
     }
   }, [focusTracking])
+
+  const handleFocusVehicleChange = useCallback((value: string) => {
+    const next = value.trim()
+    if (!next) {
+      setFocusedVehicleId(null)
+      return
+    }
+
+    if (vehicleOptions.includes(next)) {
+      setFocusedVehicleId(next)
+      setFocusSearchText(next)
+    } else {
+      setFocusSearchText(next)
+    }
+  }, [vehicleOptions])
 
   useEffect(() => {
     if (!replayMode) {
@@ -96,14 +131,16 @@ function App() {
 
   const handleVehicleSelect = useCallback(
     (vehicleId: string) => {
-      setFocusedVehicleId((prev) => {
-        if (!focusTracking) {
-          return prev === vehicleId ? null : vehicleId
-        }
-        return vehicleId
-      })
+      if (!focusTracking) {
+        setFocusedVehicleId((prev) => (prev === vehicleId ? null : vehicleId))
+        return
+      }
+      if (vehicleOptions.includes(vehicleId)) {
+        setFocusedVehicleId(vehicleId)
+        setFocusSearchText(vehicleId)
+      }
     },
-    [focusTracking],
+    [focusTracking, vehicleOptions],
   )
 
   return (
@@ -137,6 +174,22 @@ function App() {
             }}
           />
           포커스 차량 트래킹 모드
+        </label>
+        <label>
+          포커스 차량 ID:
+          <input
+            type="text"
+            value={focusSearchText}
+            onChange={(event) => handleFocusVehicleChange(event.target.value)}
+            list="vehicleIds"
+            placeholder="차량 ID 검색"
+            disabled={!focusTracking}
+          />
+          <datalist id="vehicleIds">
+            {vehicleOptions.map((id) => (
+              <option key={id} value={id} />
+            ))}
+          </datalist>
         </label>
         <label>
           <input
@@ -187,6 +240,9 @@ function App() {
       <div className="map-wrapper">
         <div className="status">{mapSourceText}</div>
         {lastUpdated && !error ? <div className="status">마지막 업데이트: {lastUpdated.toLocaleTimeString()}</div> : null}
+        {focusTracking && !focusedVehicleId ? (
+          <div className="status">포커스 차량을 선택하세요.</div>
+        ) : null}
         <VehicleMap
           vehicles={mapVehicles}
           focusedVehicleId={focusTracking ? focusedVehicleId : null}

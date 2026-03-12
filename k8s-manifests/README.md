@@ -84,7 +84,23 @@ helm rollback mobility-app -n miniproject
 | `/api/map/` | frontend-svc (VWorld proxy_pass) |
 | `/api/query/telemetry` | command-svc |
 | `/api/vehicles`, `/health`, `/api/health` | query-svc |
+| `/api/vehicles/` | query-svc (SSE 포함) |
 | `/` | frontend-svc |
+
+### SSE(Stream) 점검
+
+- `stream` 404가 계속되면 거의 항상 아래 2개 중 하나입니다.
+  1) Ingress가 최신 템플릿으로 갱신되지 않음
+  2) query API 컨테이너에 실제 `/api/vehicles/stream`이 반영되지 않음
+
+```bash
+# Ingress 확인
+kubectl get ingress mobility-api-ingress -n miniproject -o yaml
+
+# 실행 중인 Query 파드에서 직접 확인 (URL에 &는 꼭 따옴표로 감쌈)
+pod=$(kubectl get pod -n miniproject -l app=connected-car-query -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n miniproject "$pod" -- sh -c 'curl -i "http://127.0.0.1:8000/api/vehicles/stream?since=1&compact=true&summary=true&heartbeat_ms=500"'
+```
 
 ## 스토리지 (NFS PersistentVolume)
 

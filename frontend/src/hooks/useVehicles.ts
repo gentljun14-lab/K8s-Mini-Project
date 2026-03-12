@@ -22,6 +22,7 @@ const configuredBase = (import.meta.env.VITE_QUERY_API_URL || '/api').trim()
 const MIN_INTERVAL_MS = 1000
 const SSE_RETRY_MIN_MS = 1000
 const SSE_RETRY_MAX_MS = 15000
+const SSE_MAX_FAILURES_BEFORE_DISABLE = 1
 
 const QUERY_API_BASE = (() => {
   if (!configuredBase || configuredBase === '/') return '/api'
@@ -241,6 +242,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
   const sinceRef = useRef(0)
   const retryDelayRef = useRef(SSE_RETRY_MIN_MS)
   const requestControllerRef = useRef<AbortController | null>(null)
+  const sseFailureCountRef = useRef(0)
+  const sseDisabledRef = useRef(false)
 
   const filterSignature = useMemo(
     () =>
@@ -420,7 +423,13 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
   }
 
   function connectSse() {
-    if (!enableSSE || useWebSocket || eventSourceRef.current || !isMountedRef.current) {
+    if (
+      !enableSSE ||
+      useWebSocket ||
+      eventSourceRef.current ||
+      !isMountedRef.current ||
+      sseDisabledRef.current
+    ) {
       return
     }
 
@@ -435,6 +444,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
 
     eventSource.onopen = () => {
       if (!isMountedRef.current) return
+      sseFailureCountRef.current = 0
+      sseDisabledRef.current = false
       stopPolling()
       setIsRealtimeConnected(true)
       setError(null)
@@ -476,6 +487,14 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       if (!intervalRef.current) {
         startPolling()
       }
+
+      sseFailureCountRef.current += 1
+      if (sseFailureCountRef.current >= SSE_MAX_FAILURES_BEFORE_DISABLE) {
+        sseDisabledRef.current = true
+        setError('SSE(/api/vehicles/stream)가 응답하지 않아 폴링(/api/vehicles/changes)으로 전환합니다.')
+        return
+      }
+
       scheduleReconnect(() => {
         if (!isMountedRef.current) {
           return
@@ -612,6 +631,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     isMountedRef.current = true
     setLoading(true)
     sinceRef.current = 0
+    sseFailureCountRef.current = 0
+    sseDisabledRef.current = false
 
     if (requestControllerRef.current) {
       requestControllerRef.current.abort()
@@ -661,6 +682,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
   return () => {
       isMountedRef.current = false
       isPollingRef.current = false
+      sseFailureCountRef.current = 0
+      sseDisabledRef.current = false
       if (requestControllerRef.current) {
         requestControllerRef.current.abort()
       }
