@@ -89,11 +89,12 @@ pipeline {
       }
     }
 
-    stage('Deploy NFS Infra') {
+  stage('Deploy NFS Infra') {
       steps {
         sh '''
           set -eu
           cd ${PROJECT_DIR}
+          SC_EXISTS=0
 
           if [ -f "${NFS_STORAGE_MANIFEST}" ]; then
             echo "[nfs] apply nfs-storage manifest"
@@ -102,6 +103,7 @@ pipeline {
             for i in $(seq 1 30); do
               if kubectl get sc nfs-storage >/dev/null 2>&1; then
                 kubectl get sc nfs-storage
+                SC_EXISTS=1
                 break
               fi
               sleep 2
@@ -146,6 +148,7 @@ pipeline {
             for i in $(seq 1 30); do
               if kubectl get sc nfs-storage >/dev/null 2>&1; then
                 kubectl get sc nfs-storage
+                SC_EXISTS=1
                 break
               fi
               sleep 2
@@ -155,7 +158,24 @@ pipeline {
               fi
             done
           else
-            echo "[nfs] chart path not found: ${NFS_CHART_PATH}. skip."
+            echo "[nfs] chart path not found: ${NFS_CHART_PATH}. fallback to existing default storageclass."
+            if kubectl get sc nfs-storage >/dev/null 2>&1; then
+              SC_EXISTS=1
+            fi
+          fi
+
+          if [ "${SC_EXISTS}" = "0" ]; then
+            if kubectl get sc -l storageclass.kubernetes.io/is-default-class=true -o name >/dev/null 2>&1; then
+              sc_name=$(kubectl get sc -l storageclass.kubernetes.io/is-default-class=true -o jsonpath='{.items[0].metadata.name}')
+            else
+              sc_name=$(kubectl get sc -o jsonpath='{.items[0].metadata.name}')
+            fi
+            if [ -n "${sc_name}" ]; then
+              echo "[nfs] nfs-storage not found. fallback storageclass=${sc_name}"
+            else
+              echo "[nfs] no storageclass found. cannot provision PersistentVolumeClaims."
+              exit 1
+            fi
           fi
         '''
       }
@@ -167,11 +187,25 @@ pipeline {
           sh '''
             set -eu
             cd ${PROJECT_DIR}
+            SC_VALUE=$(kubectl get sc nfs-storage -o jsonpath='{.metadata.name}' 2>/dev/null || true)
+            if [ -z "${SC_VALUE}" ]; then
+              if kubectl get sc -l storageclass.kubernetes.io/is-default-class=true -o jsonpath='{.items[0].metadata.name}' >/dev/null 2>&1; then
+                SC_VALUE=$(kubectl get sc -l storageclass.kubernetes.io/is-default-class=true -o jsonpath='{.items[0].metadata.name}')
+              else
+                SC_VALUE=$(kubectl get sc -o jsonpath='{.items[0].metadata.name}')
+              fi
+            fi
+            if [ -z "${SC_VALUE}" ]; then
+              echo "[infra] no storageclass available"
+              exit 1
+            fi
+            echo "[infra] using storageClass=${SC_VALUE}"
 
             helm upgrade --install ${HELM_INFRA_RELEASE} ${HELM_INFRA_CHART_PATH} \
               -n ${NAMESPACE} --create-namespace \
               --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
-              -f ${SECRET_VALUES_FILE}
+              -f ${SECRET_VALUES_FILE} \
+              --set persistence.storageClass=${SC_VALUE}
 
             helm upgrade --install ${HELM_COMMAND_RELEASE} ${HELM_COMMAND_CHART_PATH} \
               -n ${NAMESPACE} --create-namespace \
