@@ -4,6 +4,8 @@ export interface VehicleLocation {
 }
 
 export interface RawVehicleData {
+  model?: string
+  driver?: string
   vehicle?: {
     vehicle_id?: string
     vin?: string
