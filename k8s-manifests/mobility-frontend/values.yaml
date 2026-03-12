@@ -1,0 +1,13 @@
+imagePullSecrets:
+  - name: harbor-secret
+
+frontend:
+  replicaCount: 1
+  image: "10.0.2.111:80/k8s-mini/k8s-mini-frontend:v1.1"
+
+secrets:
+  mongoRootUsername: "admin"
+  mongoRootPassword: ""
+  mongoUri: ""
+  redisPassword: ""
+  vworldApiKey: ""

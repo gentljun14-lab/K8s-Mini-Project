@@ -1,0 +1,22 @@
+imagePullSecrets:
+  - name: harbor-secret
+
+command:
+  api:
+    replicaCount: 2
+    image: "10.0.2.111:80/k8s-mini/telemetry-ingest-api:v1"
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      cpuUtilization: 50
+  consumer:
+    replicaCount: 2
+    image: "10.0.2.111:80/k8s-mini/telemetry-mongo-consumer:v1"
+
+secrets:
+  mongoRootUsername: "admin"
+  mongoRootPassword: ""
+  mongoUri: ""
+  redisPassword: ""
+  vworldApiKey: ""

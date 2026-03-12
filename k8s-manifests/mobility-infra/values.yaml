@@ -1,0 +1,23 @@
+persistence:
+  storageClass: "nfs-storage"
+
+mongo:
+  image: "mongo:7"
+  storage: "5Gi"
+  retention:
+    days: "7"
+
+redis:
+  image: "redis:7-alpine"
+  storage: "2Gi"
+
+kafka:
+  image: "apache/kafka:3.9.0"
+  storage: "10Gi"
+
+secrets:
+  mongoRootUsername: "admin"
+  mongoRootPassword: ""
+  mongoUri: ""
+  redisPassword: ""
+  vworldApiKey: ""
