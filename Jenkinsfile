@@ -41,7 +41,7 @@ pipeline {
           passwordVariable: 'HARBOR_PASS'
         )]) {
           sh '''
-            set -euo pipefail
+            set -eu
 
             echo "${HARBOR_PASS}" | docker login ${HARBOR_REGISTRY} -u "${HARBOR_USER}" --password-stdin
 
@@ -67,7 +67,7 @@ pipeline {
     stage('Deploy to Kubernetes') {
       steps {
         sh """
-          set -euo pipefail
+          set -eu
 
           helm upgrade --install ${HELM_RELEASE} ${HELM_CHART_PATH} \
             -n ${NAMESPACE} --create-namespace \
