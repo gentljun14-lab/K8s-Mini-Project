@@ -1,6 +1,14 @@
 pipeline {
   agent any
 
+  parameters {
+    booleanParam(
+      name: 'RESET_MINIPROJECT',
+      defaultValue: false,
+      description: '재배포 전 miniproject 네임스페이스와 Helm Release를 삭제해 깨끗하게 설치합니다.'
+    )
+  }
+
   options {
     timestamps()
     disableConcurrentBuilds()
@@ -48,6 +56,30 @@ pipeline {
           } else {
             env.PROJECT_DIR = '.'
           }
+        }
+      }
+    }
+
+    stage('Prepare reset namespace (optional)') {
+      when {
+        expression {
+          return params.RESET_MINIPROJECT
+        }
+      }
+      steps {
+        script {
+          sh '''
+            set -eu
+            cd ${PROJECT_DIR}
+
+            echo "[reset] removing helm releases in namespace: ${NAMESPACE}"
+            for release in ${HELM_INFRA_RELEASE} ${HELM_COMMAND_RELEASE} ${HELM_QUERY_RELEASE} ${HELM_FRONTEND_RELEASE}; do
+              helm uninstall "${release}" -n ${NAMESPACE} --ignore-not-found=true || true
+            done
+
+            kubectl delete namespace ${NAMESPACE} --ignore-not-found=true --wait=true || true
+            echo "[reset] namespace ${NAMESPACE} cleanup done"
+          '''
         }
       }
     }
