@@ -16,6 +16,8 @@ spec:
     type: RollingUpdate
   template:
     metadata:
+      annotations:
+        checksum/mobility-secret: {{ include "mobility-app.mobilitySecretChecksum" . | quote }}
       labels:
         app: mongo
     spec:
@@ -110,8 +112,11 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
-      template:
-        spec:
+          template:
+            metadata:
+              annotations:
+                checksum/mobility-secret: {{ include "mobility-app.mobilitySecretChecksum" . | quote }}
+            spec:
           restartPolicy: OnFailure
           containers:
             - name: retention-cleaner

@@ -14,6 +14,8 @@ spec:
       app: connected-car-command
   template:
     metadata:
+      annotations:
+        checksum/mobility-secret: {{ include "mobility-app.mobilitySecretChecksum" . | quote }}
       labels:
         app: connected-car-command
         tier: backend
@@ -86,6 +88,8 @@ spec:
       app: connected-car-command-consumer
   template:
     metadata:
+      annotations:
+        checksum/mobility-secret: {{ include "mobility-app.mobilitySecretChecksum" . | quote }}
       labels:
         app: connected-car-command-consumer
         tier: worker

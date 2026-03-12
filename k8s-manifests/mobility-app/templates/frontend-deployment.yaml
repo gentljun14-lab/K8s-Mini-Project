@@ -13,6 +13,8 @@ spec:
       app: connected-car-frontend
   template:
     metadata:
+      annotations:
+        checksum/mobility-secret: {{ include "mobility-app.mobilitySecretChecksum" . | quote }}
       labels:
         app: connected-car-frontend
         tier: frontend
