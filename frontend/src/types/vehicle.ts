@@ -41,13 +41,61 @@ export interface Vehicle {
   state: string
   speed_kmh: number
   soc_pct: number
+  event_ts?: number
   location?: VehicleLocation
   recent_event?: string
   raw?: RawVehicleData
 }
 
-// API 응답 전체 구조
+export interface VehicleSnapshot {
+  vehicle_id: string
+  received_at: string
+  state: string
+  speed_kmh: number
+  soc_pct: number
+  event_ts?: number
+  latitude: number
+  longitude: number
+  city?: string
+  recent_event?: string
+  model?: string
+  driver?: string
+}
+
+export interface VehicleSummary {
+  vehicle_id: string
+  received_at: string
+  state: string
+  speed_kmh: number
+  soc_pct: number
+  event_ts?: number
+  latitude: number
+  longitude: number
+  city?: string
+  recent_event?: string
+  model?: string
+  driver?: string
+}
+
 export interface VehiclesResponse {
   count: number
   vehicles: Vehicle[]
+}
+
+export interface VehicleSnapshotsResponse {
+  count: number
+  vehicles: VehicleSnapshot[]
+}
+
+export interface VehicleDeltaResponse {
+  count: number
+  updates: Array<Vehicle | VehicleSnapshot>
+  stream_last_id?: number
+}
+
+export interface VehicleListResponse {
+  type?: string
+  count: number
+  vehicles: VehicleSnapshot[]
+  stream_last_id?: number
 }

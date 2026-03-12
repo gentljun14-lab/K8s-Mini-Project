@@ -1,7 +1,27 @@
-﻿import { useEffect, useRef, useState } from 'react'
-import type { Vehicle, VehiclesResponse } from '../types/vehicle'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  Vehicle,
+  VehicleSnapshot,
+  VehicleSummary,
+  VehiclesResponse,
+  VehicleSnapshotsResponse,
+  VehicleListResponse,
+  VehicleDeltaResponse,
+} from '../types/vehicle'
+import type { RawVehicleData } from '../types/vehicle'
+
+type VehicleQueryFilters = {
+  vehicleId?: string
+  state?: string
+  city?: string
+  minSpeed?: number
+  maxSpeed?: number
+}
 
 const configuredBase = (import.meta.env.VITE_QUERY_API_URL || '/api').trim()
+const MIN_INTERVAL_MS = 1000
+const SSE_RETRY_MIN_MS = 1000
+const SSE_RETRY_MAX_MS = 15000
 
 const QUERY_API_BASE = (() => {
   if (!configuredBase || configuredBase === '/') return '/api'
@@ -17,8 +37,176 @@ const QUERY_API_BASE = (() => {
   return `/${configuredBase.replace(/^\/+/, '').replace(/\/+$/, '')}`
 })()
 
-function getVehiclesEndpoint(): string {
-  return `${QUERY_API_BASE}/vehicles`
+function stripBasePrefix(path: string, base: string): string {
+  if (!base || base === '/') {
+    return path.startsWith('/') ? path : `/${path}`
+  }
+
+  if (path.startsWith(base)) {
+    const sliced = path.slice(base.length)
+    return sliced.startsWith('/') ? sliced : `/${sliced}`
+  }
+
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  return path.startsWith('/') ? path : `/${path}`
+}
+
+function buildApiUrl(path: string) {
+  const base = QUERY_API_BASE.replace(/\/+$/, '')
+  const normalizedPath = stripBasePrefix(path, base)
+  return `${base}${normalizedPath}`
+}
+
+function parseNumber(value: unknown): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.trunc(value) : 0
+  }
+  if (typeof value === 'string') {
+    const num = Number(value)
+    if (Number.isFinite(num)) {
+      return Math.trunc(num)
+    }
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+  return 0
+}
+
+function parseReceivedAt(accepted: unknown): number {
+  const numberValue = parseNumber(accepted)
+  if (numberValue > 0) {
+    return numberValue
+  }
+  return 0
+}
+
+function normalizeTimestamp(accepted: unknown, fallback: number): number {
+  const value = parseReceivedAt(accepted)
+  if (value > 0) {
+    return value
+  }
+  return fallback
+}
+
+function isVehicleSnapshot(input: unknown): input is Record<string, any> {
+  return (
+    input !== null &&
+    typeof input === 'object' &&
+    !('location' in input) &&
+    typeof (input as any).latitude === 'number' &&
+    typeof (input as any).longitude === 'number'
+  )
+}
+
+function toVehicle(input: any): Vehicle {
+  if (isVehicleSnapshot(input)) {
+    const normalizedTripState = 'UNKNOWN' as NonNullable<RawVehicleData['trip']>['state']
+    const snapshotInput = input as Record<string, any>
+
+    return {
+      vehicle_id: snapshotInput.vehicle_id as string,
+      timestamp: snapshotInput.received_at as string,
+      received_at: snapshotInput.received_at as string,
+      event_ts: snapshotInput.event_ts as number | undefined,
+      state: snapshotInput.state as string,
+      speed_kmh: Number(snapshotInput.speed_kmh) || 0,
+      soc_pct: Number(snapshotInput.soc_pct) || 0,
+      location: {
+        latitude: Number(snapshotInput.latitude),
+        longitude: Number(snapshotInput.longitude),
+      },
+      recent_event: snapshotInput.recent_event as string | undefined,
+      raw: {
+        vehicle: {
+          model: snapshotInput.model as string | undefined,
+          driver: snapshotInput.driver as string | undefined,
+        },
+        location: {
+          city: snapshotInput.city as string | undefined,
+        },
+        trip: {
+          state: normalizedTripState,
+          speed_kmh: Number(snapshotInput.speed_kmh) || 0,
+        },
+        battery: {
+          soc_pct: Number(snapshotInput.soc_pct) || 0,
+        },
+      },
+    }
+  }
+
+  return {
+    vehicle_id: input.vehicle_id,
+    timestamp: input.timestamp ?? input.received_at,
+    received_at: input.received_at,
+    event_ts: input.event_ts,
+    state: input.state,
+    speed_kmh: Number(input.speed_kmh) || 0,
+    soc_pct: Number(input.soc_pct) || 0,
+    location: input.location
+      ? {
+          latitude: Number(input.location.latitude),
+          longitude: Number(input.location.longitude),
+        }
+      : undefined,
+    recent_event: input.recent_event,
+    raw: input.raw,
+  }
+}
+
+function parseVehicles(payload: unknown): Vehicle[] {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+
+  const asVehiclePayload = payload as VehiclesResponse | VehicleSnapshotsResponse | VehicleListResponse | VehicleDeltaResponse
+
+  if ('vehicles' in asVehiclePayload && Array.isArray(asVehiclePayload.vehicles)) {
+    return asVehiclePayload.vehicles
+      .map((item) => toVehicle(item as Vehicle | VehicleSnapshot | VehicleSummary))
+      .filter((item) => Boolean(item.vehicle_id))
+  }
+
+  if ('updates' in asVehiclePayload && Array.isArray((asVehiclePayload as VehicleDeltaResponse).updates)) {
+    return (asVehiclePayload as VehicleDeltaResponse).updates
+      .map((item) => toVehicle(item as Vehicle | VehicleSnapshot | VehicleSummary))
+      .filter((item) => Boolean(item.vehicle_id))
+  }
+
+  return []
+}
+
+function applyVehicles(prev: Vehicle[], next: Vehicle[]): Vehicle[] {
+  const map = new Map<string, Vehicle>()
+  prev.forEach((vehicle) => {
+    if (vehicle.vehicle_id) {
+      map.set(vehicle.vehicle_id, vehicle)
+    }
+  })
+
+  next.forEach((vehicle) => {
+    if (!vehicle.vehicle_id) {
+      return
+    }
+
+    map.set(vehicle.vehicle_id, {
+      ...map.get(vehicle.vehicle_id),
+      ...vehicle,
+    })
+  })
+
+  return [...map.values()].sort((a, b) => a.vehicle_id.localeCompare(b.vehicle_id))
+}
+
+interface UseVehiclesOptions {
+  intervalMs?: number
+  enableSSE?: boolean
+  useCompact?: boolean
+  useWebSocket?: boolean
+  filters?: VehicleQueryFilters
 }
 
 interface UseVehiclesResult {
@@ -26,106 +214,472 @@ interface UseVehiclesResult {
   loading: boolean
   error: string | null
   lastUpdated: Date | null
+  isRealtimeConnected: boolean
 }
 
-export function useVehicles(intervalMs = 1000): UseVehiclesResult {
+export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {}): UseVehiclesResult {
+  const {
+    enableSSE = true,
+    useCompact = true,
+    useWebSocket = false,
+    filters,
+  } = options
+  const clampedIntervalMs = Math.max(MIN_INTERVAL_MS, intervalMs)
+
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const websocketRef = useRef<WebSocket | null>(null)
   const isMountedRef = useRef(true)
-  const requestSeqRef = useRef(0)
-  const clampedIntervalMs = Math.max(1000, intervalMs)
-  const endpoint = getVehiclesEndpoint()
+  const isPollingRef = useRef(false)
+  const sinceRef = useRef(0)
+  const retryDelayRef = useRef(SSE_RETRY_MIN_MS)
+  const requestControllerRef = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    const fetchVehicles = async () => {
+  const filterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        vehicleId: filters?.vehicleId?.trim() || '',
+        state: filters?.state?.trim() || '',
+        city: filters?.city?.trim() || '',
+        minSpeed: filters?.minSpeed ?? null,
+        maxSpeed: filters?.maxSpeed ?? null,
+      }),
+    [
+      filters?.vehicleId,
+      filters?.state,
+      filters?.city,
+      filters?.minSpeed,
+      filters?.maxSpeed,
+    ],
+  )
+
+  const closeRealtime = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+
+    if (websocketRef.current) {
+      websocketRef.current.close()
+      websocketRef.current = null
+    }
+
+    setIsRealtimeConnected(false)
+  }, [])
+
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    isPollingRef.current = false
+  }, [])
+
+  const stopRealtime = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+    closeRealtime()
+  }, [closeRealtime])
+
+  const scheduleReconnect = useCallback((fn: () => void, delayMs?: number) => {
+    const delay = Math.max(
+      SSE_RETRY_MIN_MS,
+      Math.min(SSE_RETRY_MAX_MS, delayMs ?? retryDelayRef.current),
+    )
+
+    retryDelayRef.current = Math.min(SSE_RETRY_MAX_MS, delay * 2)
+
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+    }
+
+    retryTimerRef.current = window.setTimeout(() => {
+      if (!isMountedRef.current) {
+        return
+      }
+      fn()
+    }, delay)
+  }, [])
+
+  function addFilters(url: URL) {
+    if (filters?.vehicleId) {
+      url.searchParams.set('vehicle_id', filters.vehicleId)
+    }
+    if (filters?.state) {
+      url.searchParams.set('state', filters.state)
+    }
+    if (filters?.city) {
+      url.searchParams.set('city', filters.city)
+    }
+    if (filters?.minSpeed !== undefined) {
+      url.searchParams.set('minSpeed', String(filters.minSpeed))
+    }
+    if (filters?.maxSpeed !== undefined) {
+      url.searchParams.set('maxSpeed', String(filters.maxSpeed))
+    }
+  }
+
+  function updateCursorFromVehicles(updates: Vehicle[]) {
+    if (updates.length === 0) {
+      return
+    }
+
+    const latest = updates.reduce(
+      (acc, cur) => Math.max(
+        acc,
+        normalizeTimestamp(
+          cur.event_ts,
+          parseReceivedAt(cur.received_at),
+        ),
+      ),
+      0,
+    )
+
+    if (latest > 0) {
+      sinceRef.current = Math.max(sinceRef.current, latest)
+    }
+  }
+
+  function applyQueryParams(url: URL, { withSince = false }: { withSince?: boolean } = {}) {
+    if (withSince && sinceRef.current) {
+      url.searchParams.set('since', String(sinceRef.current))
+    }
+
+    url.searchParams.set('compact', String(useCompact))
+    url.searchParams.set('summary', String(useCompact))
+
+    addFilters(url)
+    return url
+  }
+
+  async function fetchSnapshot(signal?: AbortSignal): Promise<Vehicle[]> {
+    const path = useCompact ? '/api/vehicles/list' : '/api/vehicles'
+    const url = applyQueryParams(new URL(buildApiUrl(path), window.location.origin), {
+      withSince: false,
+    })
+
+    const res = await fetch(url.toString(), {
+      signal,
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    })
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+
+    const payload: unknown = await res.json()
+    const loaded = parseVehicles(payload)
+    updateCursorFromVehicles(loaded)
+    return loaded
+  }
+
+  async function fetchDelta(signal?: AbortSignal): Promise<Vehicle[]> {
+    if (!sinceRef.current) {
+      return fetchSnapshot(signal)
+    }
+
+    const endpoint = useCompact ? '/api/vehicles/changes' : '/api/vehicles/delta'
+    const url = applyQueryParams(new URL(buildApiUrl(endpoint), window.location.origin), {
+      withSince: true,
+    })
+
+    const res = await fetch(url.toString(), {
+      signal,
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    })
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+
+    const payload: unknown = await res.json()
+    if (!payload || typeof payload !== 'object') {
+      return []
+    }
+
+    const asDelta = payload as VehicleDeltaResponse
+    if (typeof asDelta.stream_last_id !== 'undefined') {
+      sinceRef.current = Math.max(sinceRef.current, parseNumber(asDelta.stream_last_id))
+    }
+    const updates = parseVehicles(asDelta)
+    updateCursorFromVehicles(updates)
+    return updates
+  }
+
+  function connectSse() {
+    if (!enableSSE || useWebSocket || eventSourceRef.current || !isMountedRef.current) {
+      return
+    }
+
+    retryDelayRef.current = SSE_RETRY_MIN_MS
+    const url = applyQueryParams(new URL(buildApiUrl('/api/vehicles/stream'), window.location.origin), {
+      withSince: true,
+    })
+    url.searchParams.set('heartbeat_ms', '500')
+
+    const eventSource = new EventSource(url.toString())
+    eventSourceRef.current = eventSource
+
+    eventSource.onopen = () => {
+      if (!isMountedRef.current) return
+      stopPolling()
+      setIsRealtimeConnected(true)
+      setError(null)
+      retryDelayRef.current = SSE_RETRY_MIN_MS
+    }
+
+    eventSource.onmessage = (event) => {
+      if (!isMountedRef.current) return
+
+      try {
+        const parsed = JSON.parse(event.data)
+        if (parsed?.type === 'heartbeat') {
+          return
+        }
+
+        if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
+          const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
+          setVehicles(normalized)
+          updateCursorFromVehicles(normalized)
+          setLastUpdated(new Date())
+          return
+        }
+
+        if (Array.isArray(parsed?.updates)) {
+          const updates = parseVehicles(parsed as VehicleDeltaResponse)
+          setVehicles((prev) => applyVehicles(prev, updates))
+          updateCursorFromVehicles(updates)
+          setLastUpdated(new Date())
+        }
+      } catch {
+        if (!isMountedRef.current) return
+        setError('잘못된 실시간 데이터 형식입니다.')
+      }
+    }
+
+    eventSource.onerror = () => {
+      if (!isMountedRef.current) return
+      closeRealtime()
+      if (!intervalRef.current) {
+        startPolling()
+      }
+      scheduleReconnect(() => {
+        if (!isMountedRef.current) {
+          return
+        }
+        connectSse()
+      }, SSE_RETRY_MIN_MS)
+    }
+  }
+
+  function connectWebSocket() {
+    if (!useWebSocket || !enableSSE || websocketRef.current || !isMountedRef.current) {
+      return
+    }
+
+    retryDelayRef.current = SSE_RETRY_MIN_MS
+    const baseUrl = new URL(buildApiUrl('/api/vehicles/ws'), window.location.origin)
+    addFilters(baseUrl)
+    const protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+    const params = baseUrl.searchParams
+    params.set('compact', useCompact ? '1' : '0')
+    params.set('summary', String(useCompact))
+    params.set('since', String(sinceRef.current))
+
+    const wsUrl = `${protocol}//${baseUrl.host}${baseUrl.pathname}?${params.toString()}`
+    const socket = new WebSocket(wsUrl)
+    websocketRef.current = socket
+
+    socket.onopen = () => {
+      if (!isMountedRef.current) return
+      stopPolling()
+      setIsRealtimeConnected(true)
+      setError(null)
+      retryDelayRef.current = SSE_RETRY_MIN_MS
+    }
+
+    socket.onmessage = (event) => {
+      if (!isMountedRef.current) return
+      try {
+        const parsed = JSON.parse(event.data)
+        if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
+          const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
+          setVehicles(normalized)
+          updateCursorFromVehicles(normalized)
+          setLastUpdated(new Date())
+          return
+        }
+
+        if (Array.isArray(parsed?.updates)) {
+          const updates = parseVehicles(parsed as VehicleDeltaResponse)
+          setVehicles((prev) => applyVehicles(prev, updates))
+          updateCursorFromVehicles(updates)
+          setLastUpdated(new Date())
+        }
+      } catch {
+        if (!isMountedRef.current) return
+        setError('잘못된 실시간 데이터 형식입니다.')
+      }
+    }
+
+    socket.onclose = () => {
+      closeRealtime()
       if (!isMountedRef.current) {
         return
       }
 
-      const requestId = ++requestSeqRef.current
-      const controller = new AbortController()
-      abortRef.current?.abort()
-      abortRef.current = controller
-
-      const timeoutId = window.setTimeout(() => {
-        controller.abort(new DOMException('Request timeout', 'AbortError'))
-      }, 8000)
-
-      if (requestId === 1 && vehicles.length === 0) {
-        setLoading(true)
+      if (!intervalRef.current) {
+        startPolling()
       }
 
-      try {
-        const res = await fetch(endpoint, {
-          signal: controller.signal,
-          headers: {
-            'Cache-Control': 'no-cache',
-          },
-        })
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+      scheduleReconnect(() => {
+        if (!isMountedRef.current) {
+          return
         }
+        connectWebSocket()
+      }, SSE_RETRY_MIN_MS)
+    }
+  }
 
-        const payload: unknown = await res.json()
-        const parsed: Vehicle[] =
-          Array.isArray(payload)
-            ? payload
-            : typeof payload === 'object' &&
-              payload !== null &&
-              'vehicles' in (payload as Record<string, unknown>)
-              ? ((payload as VehiclesResponse).vehicles ?? [])
-              : []
+  function startPolling() {
+    if (intervalRef.current || !isMountedRef.current || isPollingRef.current) {
+      return
+    }
 
-        if (requestId !== requestSeqRef.current || !isMountedRef.current) {
+    const poll = async () => {
+      if (!isMountedRef.current || isPollingRef.current) {
+        return
+      }
+
+      isPollingRef.current = true
+
+      if (requestControllerRef.current) {
+        requestControllerRef.current.abort()
+      }
+
+      const controller = new AbortController()
+      requestControllerRef.current = controller
+      try {
+        const next = await fetchDelta(controller.signal)
+        if (!isMountedRef.current) {
           return
         }
 
-        setVehicles(parsed ?? [])
+        if (sinceRef.current === 0) {
+          setVehicles(next)
+        } else {
+          setVehicles((prev) => applyVehicles(prev, next))
+        }
+
         setError(null)
         setLastUpdated(new Date())
       } catch (e) {
-        if (requestId !== requestSeqRef.current) {
+        if (!isMountedRef.current) {
           return
         }
-
         if (controller.signal.aborted) {
           return
         }
-
-        const message = e instanceof Error ? e.message : 'API request failed'
-        if (requestId === requestSeqRef.current) {
-          setError(message)
-        }
+        setError(e instanceof Error ? e.message : 'API 요청 실패')
       } finally {
-        window.clearTimeout(timeoutId)
-
-        if (requestId === requestSeqRef.current && isMountedRef.current) {
+        isPollingRef.current = false
+        if (isMountedRef.current) {
           setLoading(false)
         }
       }
     }
 
-    isMountedRef.current = true
-    fetchVehicles()
-
+    poll()
     intervalRef.current = window.setInterval(() => {
-      fetchVehicles()
+      poll()
     }, clampedIntervalMs)
+  }
 
-    return () => {
-      isMountedRef.current = false
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
-      abortRef.current?.abort(new DOMException('Component unmounted', 'AbortError'))
+  useEffect(() => {
+    isMountedRef.current = true
+    setLoading(true)
+    sinceRef.current = 0
+
+    if (requestControllerRef.current) {
+      requestControllerRef.current.abort()
     }
-  }, [clampedIntervalMs, endpoint])
 
-  return { vehicles, loading, error, lastUpdated }
+    const controller = new AbortController()
+    requestControllerRef.current = controller
+
+      const init = async () => {
+        try {
+          const snapshot = await fetchDelta(controller.signal)
+        if (!isMountedRef.current || controller.signal.aborted) {
+          return
+        }
+        setVehicles(snapshot)
+        setError(null)
+        setLastUpdated(new Date())
+      } catch (e) {
+        if (isMountedRef.current && !controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : 'API 요청 실패')
+        }
+      } finally {
+        if (isMountedRef.current && !controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+
+      if (enableSSE) {
+        if (useWebSocket) {
+          connectWebSocket()
+          if (!websocketRef.current) {
+            startPolling()
+          }
+        } else {
+          connectSse()
+          if (!eventSourceRef.current) {
+            startPolling()
+          }
+        }
+      } else {
+        startPolling()
+      }
+    }
+
+    init()
+
+  return () => {
+      isMountedRef.current = false
+      isPollingRef.current = false
+      if (requestControllerRef.current) {
+        requestControllerRef.current.abort()
+      }
+      stopPolling()
+      stopRealtime()
+    }
+  }, [
+    clampedIntervalMs,
+    enableSSE,
+    filterSignature,
+    useCompact,
+    useWebSocket,
+  ])
+
+  return {
+    vehicles,
+    loading,
+    error,
+    lastUpdated,
+    isRealtimeConnected,
+  }
 }
