@@ -27,6 +27,7 @@ pipeline {
     HELM_FRONTEND_RELEASE = "mobility-frontend"
     HELM_FRONTEND_CHART_PATH = "k8s-manifests/mobility-frontend"
     NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
+    HARBOR_EMAIL = "ci@k8s-mini.local"
   }
 
   stages {
@@ -89,6 +90,34 @@ pipeline {
       }
     }
 
+    stage('Prepare Registry Auth') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: env.HARBOR_CREDS,
+          usernameVariable: 'HARBOR_USER',
+          passwordVariable: 'HARBOR_PASS'
+        )]) {
+          sh '''
+            set -eu
+            cd ${PROJECT_DIR}
+            kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+            kubectl create secret docker-registry harbor-secret \
+              --namespace ${NAMESPACE} \
+              --docker-server=${HARBOR_REGISTRY} \
+              --docker-username="${HARBOR_USER}" \
+              --docker-password="${HARBOR_PASS}" \
+              --docker-email="${HARBOR_EMAIL}" \
+              --dry-run=client -o yaml \
+              | kubectl apply -f -
+
+            kubectl patch serviceaccount default -n ${NAMESPACE} \
+              -p '{"imagePullSecrets":[{"name":"harbor-secret"}]}'
+          '''
+        }
+      }
+    }
+
   stage('Deploy NFS Infra') {
       steps {
         sh '''
@@ -98,6 +127,24 @@ pipeline {
 
           if [ -f "${NFS_STORAGE_MANIFEST}" ]; then
             echo "[nfs] apply nfs-storage manifest"
+            NFS_PROVISIONER=$(awk '/^provisioner:/{print $2}' "${NFS_STORAGE_MANIFEST}" | head -n 1)
+            NFS_RECLAIM=$(awk '/^reclaimPolicy:/{print $2}' "${NFS_STORAGE_MANIFEST}" | head -n 1)
+            NFS_BINDMODE=$(awk '/^volumeBindingMode:/{print $2}' "${NFS_STORAGE_MANIFEST}" | head -n 1)
+
+            if kubectl get sc nfs-storage >/dev/null 2>&1; then
+              CURRENT_PROVISIONER=$(kubectl get sc nfs-storage -o jsonpath='{.provisioner}')
+              CURRENT_RECLAIM=$(kubectl get sc nfs-storage -o jsonpath='{.reclaimPolicy}')
+              CURRENT_BINDMODE=$(kubectl get sc nfs-storage -o jsonpath='{.volumeBindingMode}')
+              if [ "${CURRENT_PROVISIONER}" != "${NFS_PROVISIONER}" ] || \
+                 [ "${CURRENT_RECLAIM}" != "${NFS_RECLAIM}" ] || \
+                 [ "${CURRENT_BINDMODE}" != "${NFS_BINDMODE}" ]; then
+                echo "[nfs] existing nfs-storage differs from manifest, recreate"
+                kubectl delete storageclass nfs-storage --ignore-not-found=true
+              else
+                echo "[nfs] existing nfs-storage matches manifest"
+              fi
+            fi
+
             kubectl apply -f "${NFS_STORAGE_MANIFEST}"
             echo "[nfs] waiting for storageclass nfs-storage"
             for i in $(seq 1 30); do
@@ -228,6 +275,27 @@ pipeline {
               --set frontend.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/k8s-mini-frontend:${IMAGE_TAG}
           '''
         }
+      }
+    }
+
+    stage('Verify Workload Readiness') {
+      steps {
+        sh '''
+          set -eu
+          cd ${PROJECT_DIR}
+          kubectl get pvc -n ${NAMESPACE}
+          kubectl get pod -n ${NAMESPACE}
+
+          PENDING_PVC=$(kubectl get pvc -n ${NAMESPACE} --no-headers 2>/dev/null | awk '$2 != "Bound" {count++} END {print count+0}')
+          if [ "${PENDING_PVC}" -gt 0 ]; then
+            echo "[verify] warning: some PVCs are not Bound (count=${PENDING_PVC})"
+          fi
+
+          if kubectl get pod -n ${NAMESPACE} --field-selector=status.phase=Pending --no-headers 2>/dev/null | grep -q .; then
+            echo "[verify] warning: pending pods exist"
+            kubectl get pod -n ${NAMESPACE} --field-selector=status.phase=Pending --no-headers
+          fi
+        '''
       }
     }
   }
