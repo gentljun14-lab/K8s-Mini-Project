@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # 의존성 먼저 설치 (레이어 캐싱 활용)
-COPY package*.json .
+COPY package*.json ./
 RUN npm ci
 
 # 소스 복사 및 빌드
