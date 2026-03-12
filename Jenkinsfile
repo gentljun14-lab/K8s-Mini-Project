@@ -26,6 +26,7 @@ pipeline {
     HELM_QUERY_CHART_PATH = "k8s-manifests/mobility-query"
     HELM_FRONTEND_RELEASE = "mobility-frontend"
     HELM_FRONTEND_CHART_PATH = "k8s-manifests/mobility-frontend"
+    NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
   }
 
   stages {
@@ -94,7 +95,22 @@ pipeline {
           set -eu
           cd ${PROJECT_DIR}
 
-          if [ -d "${NFS_CHART_PATH}" ]; then
+          if [ -f "${NFS_STORAGE_MANIFEST}" ]; then
+            echo "[nfs] apply nfs-storage manifest"
+            kubectl apply -f "${NFS_STORAGE_MANIFEST}"
+            echo "[nfs] waiting for storageclass nfs-storage"
+            for i in $(seq 1 30); do
+              if kubectl get sc nfs-storage >/dev/null 2>&1; then
+                kubectl get sc nfs-storage
+                break
+              fi
+              sleep 2
+              if [ "$i" = "30" ]; then
+                echo "[nfs] storageclass nfs-storage not found"
+                exit 1
+              fi
+            done
+          elif [ -d "${NFS_CHART_PATH}" ]; then
             echo "[nfs] installing/updating nfs subdir provisioner"
 
             NFS_VALUES=""
@@ -126,6 +142,18 @@ pipeline {
 
             kubectl -n ${NFS_NAMESPACE} exec "${POD_NAME}" -- sh -c "touch /persistentvolumes/.probe && rm -f /persistentvolumes/.probe"
             echo "[nfs] probe write check passed"
+            echo "[nfs] waiting for storageclass nfs-storage"
+            for i in $(seq 1 30); do
+              if kubectl get sc nfs-storage >/dev/null 2>&1; then
+                kubectl get sc nfs-storage
+                break
+              fi
+              sleep 2
+              if [ "$i" = "30" ]; then
+                echo "[nfs] storageclass nfs-storage not found"
+                exit 1
+              fi
+            done
           else
             echo "[nfs] chart path not found: ${NFS_CHART_PATH}. skip."
           fi
@@ -143,7 +171,7 @@ pipeline {
             helm upgrade --install ${HELM_INFRA_RELEASE} ${HELM_INFRA_CHART_PATH} \
               -n ${NAMESPACE} --create-namespace \
               --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
-              -f ${SECRET_VALUES_FILE} \
+              -f ${SECRET_VALUES_FILE}
 
             helm upgrade --install ${HELM_COMMAND_RELEASE} ${HELM_COMMAND_CHART_PATH} \
               -n ${NAMESPACE} --create-namespace \
