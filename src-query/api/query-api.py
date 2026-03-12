@@ -18,6 +18,18 @@ app.add_middleware(
 )
 
 
+def _parse_vehicle_payload(raw: object | None) -> object | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
 @app.get("/health")
 async def health_check():
     """헬스체크 API"""
@@ -38,25 +50,29 @@ async def api_health_check():
 async def get_all_vehicles():
     """전체 차량의 최근 상태를 조회합니다."""
     try:
-        # Redis 키 패턴에 맞는 차량 데이터 키를 SCAN 기반으로 수집 후 MGET로 일괄 조회
+        # SCAN으로 키를 순차 수집하고, MGET은 배치 단위로 조회해 메모리/지연을 낮춤
         key_pattern = os.getenv("REDIS_KEY_PATTERN", "vehicle:*:latest")
-        keys = list(redis_client.scan_iter(match=key_pattern, count=1000))
+        scan_count = int(os.getenv("REDIS_SCAN_COUNT", 1000))
+        mget_batch = int(os.getenv("REDIS_MGET_BATCH", 200))
 
-        if not keys:
-            return {"count": 0, "vehicles": []}
-
-        values = redis_client.mget(keys)
         vehicles = []
+        key_batch = []
+        for key in redis_client.scan_iter(match=key_pattern, count=scan_count):
+            key_batch.append(key)
+            if len(key_batch) >= mget_batch:
+                values = redis_client.mget(key_batch)
+                for value in values:
+                    parsed = _parse_vehicle_payload(value)
+                    if parsed is not None:
+                        vehicles.append(parsed)
+                key_batch = []
 
-        for value in values:
-            if not value:
-                continue
-            if isinstance(value, bytes):
-                value = value.decode("utf-8")
-            try:
-                vehicles.append(json.loads(value))
-            except (TypeError, json.JSONDecodeError):
-                continue
+        if key_batch:
+            values = redis_client.mget(key_batch)
+            for value in values:
+                parsed = _parse_vehicle_payload(value)
+                if parsed is not None:
+                    vehicles.append(parsed)
 
         return {"count": len(vehicles), "vehicles": vehicles}
     except Exception as e:
@@ -70,9 +86,10 @@ async def get_vehicle_by_id(vehicle_id: str):
     data = redis_client.get(key)
     if not data:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    if isinstance(data, bytes):
-        data = data.decode("utf-8")
-    return json.loads(data)
+    parsed = _parse_vehicle_payload(data)
+    if parsed is None:
+        raise HTTPException(status_code=500, detail="Invalid vehicle payload")
+    return parsed
 
 
 if __name__ == "__main__":

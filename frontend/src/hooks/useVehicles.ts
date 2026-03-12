@@ -34,20 +34,20 @@ export function useVehicles(intervalMs = 1000): UseVehiclesResult {
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
-  const isRunningRef = useRef(false)
+  const requestSeqRef = useRef(0)
   const clampedIntervalMs = Math.max(1000, intervalMs)
+  const endpoint = getVehiclesEndpoint()
 
   useEffect(() => {
     const fetchVehicles = async () => {
-      if (!isMountedRef.current || isRunningRef.current) {
+      if (!isMountedRef.current) {
         return
       }
 
-      isRunningRef.current = true
-      const endpoint = getVehiclesEndpoint()
+      const requestId = ++requestSeqRef.current
       const controller = new AbortController()
       abortRef.current?.abort()
       abortRef.current = controller
@@ -56,7 +56,9 @@ export function useVehicles(intervalMs = 1000): UseVehiclesResult {
         controller.abort(new DOMException('Request timeout', 'AbortError'))
       }, 8000)
 
-      setLoading(true)
+      if (requestId === 1 && vehicles.length === 0) {
+        setLoading(true)
+      }
 
       try {
         const res = await fetch(endpoint, {
@@ -71,29 +73,40 @@ export function useVehicles(intervalMs = 1000): UseVehiclesResult {
         }
 
         const payload: unknown = await res.json()
-        const parsed: Vehicle[] = Array.isArray(payload)
-          ? payload
-          : typeof payload === 'object' && payload !== null && 'vehicles' in (payload as Record<string, unknown>)
-            ? ((payload as VehiclesResponse).vehicles ?? [])
-            : []
+        const parsed: Vehicle[] =
+          Array.isArray(payload)
+            ? payload
+            : typeof payload === 'object' &&
+              payload !== null &&
+              'vehicles' in (payload as Record<string, unknown>)
+              ? ((payload as VehiclesResponse).vehicles ?? [])
+              : []
+
+        if (requestId !== requestSeqRef.current || !isMountedRef.current) {
+          return
+        }
 
         setVehicles(parsed ?? [])
         setError(null)
         setLastUpdated(new Date())
       } catch (e) {
-        if (controller.signal.aborted && !isMountedRef.current) {
+        if (requestId !== requestSeqRef.current) {
+          return
+        }
+
+        if (controller.signal.aborted) {
           return
         }
 
         const message = e instanceof Error ? e.message : 'API request failed'
-        setError(message)
+        if (requestId === requestSeqRef.current) {
+          setError(message)
+        }
       } finally {
         window.clearTimeout(timeoutId)
-        isRunningRef.current = false
-        setLoading(false)
 
-        if (isMountedRef.current) {
-          timerRef.current = window.setTimeout(fetchVehicles, clampedIntervalMs)
+        if (requestId === requestSeqRef.current && isMountedRef.current) {
+          setLoading(false)
         }
       }
     }
@@ -101,14 +114,18 @@ export function useVehicles(intervalMs = 1000): UseVehiclesResult {
     isMountedRef.current = true
     fetchVehicles()
 
+    intervalRef.current = window.setInterval(() => {
+      fetchVehicles()
+    }, clampedIntervalMs)
+
     return () => {
       isMountedRef.current = false
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
       }
       abortRef.current?.abort(new DOMException('Component unmounted', 'AbortError'))
     }
-  }, [clampedIntervalMs])
+  }, [clampedIntervalMs, endpoint])
 
   return { vehicles, loading, error, lastUpdated }
 }
