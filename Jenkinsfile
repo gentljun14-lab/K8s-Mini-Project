@@ -13,14 +13,34 @@ pipeline {
     IMAGE_TAG       = "${env.BUILD_NUMBER}"
     HARBOR_CREDS    = "harbor-credentials"
     NAMESPACE       = "miniproject"
-    HELM_RELEASE    = "mobility-app"
-    HELM_CHART_PATH = "k8s-manifests/mobility-app"
+    PROJECT_DIR     = "."
+    HELM_TIMEOUT    = "10m"
+    HELM_INFRA_RELEASE = "mobility-infra"
+    HELM_INFRA_CHART_PATH = "k8s-manifests/mobility-infra"
+    HELM_COMMAND_RELEASE = "mobility-command"
+    HELM_COMMAND_CHART_PATH = "k8s-manifests/mobility-command"
+    HELM_QUERY_RELEASE = "mobility-query"
+    HELM_QUERY_CHART_PATH = "k8s-manifests/mobility-query"
+    HELM_FRONTEND_RELEASE = "mobility-frontend"
+    HELM_FRONTEND_CHART_PATH = "k8s-manifests/mobility-frontend"
   }
 
   stages {
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+    stage('Set project path') {
+      steps {
+        script {
+          if (fileExists('K8s-Mini-Project')) {
+            env.PROJECT_DIR = 'K8s-Mini-Project'
+          } else {
+            env.PROJECT_DIR = '.'
+          }
+        }
       }
     }
 
@@ -44,6 +64,7 @@ pipeline {
             set -eu
 
             echo "${HARBOR_PASS}" | docker login ${HARBOR_REGISTRY} -u "${HARBOR_USER}" --password-stdin
+            cd ${PROJECT_DIR}
 
             docker build -t ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG} ./src-command/ingest
             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG}
@@ -69,15 +90,31 @@ pipeline {
         withCredentials([file(credentialsId: 'mobility-secret-values', variable: 'SECRET_VALUES_FILE')]) {
           sh '''
             set -eu
+            cd ${PROJECT_DIR}
 
-            helm upgrade --install ${HELM_RELEASE} ${HELM_CHART_PATH} \
+            helm upgrade --install ${HELM_INFRA_RELEASE} ${HELM_INFRA_CHART_PATH} \
               -n ${NAMESPACE} --create-namespace \
-              --wait --timeout 10m --atomic --cleanup-on-fail \
+              --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
+              -f ${SECRET_VALUES_FILE} \
+
+            helm upgrade --install ${HELM_COMMAND_RELEASE} ${HELM_COMMAND_CHART_PATH} \
+              -n ${NAMESPACE} --create-namespace \
+              --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
               -f ${SECRET_VALUES_FILE} \
               --set command.api.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-ingest-api:${IMAGE_TAG} \
-              --set command.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-mongo-consumer:${IMAGE_TAG} \
+              --set command.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/telemetry-mongo-consumer:${IMAGE_TAG}
+
+            helm upgrade --install ${HELM_QUERY_RELEASE} ${HELM_QUERY_CHART_PATH} \
+              -n ${NAMESPACE} --create-namespace \
+              --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
+              -f ${SECRET_VALUES_FILE} \
               --set query.api.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-api:${IMAGE_TAG} \
-              --set query.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-consumer:${IMAGE_TAG} \
+              --set query.consumer.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/mobility-query-consumer:${IMAGE_TAG}
+
+            helm upgrade --install ${HELM_FRONTEND_RELEASE} ${HELM_FRONTEND_CHART_PATH} \
+              -n ${NAMESPACE} --create-namespace \
+              --wait --timeout ${HELM_TIMEOUT} --atomic --cleanup-on-fail \
+              -f ${SECRET_VALUES_FILE} \
               --set frontend.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/k8s-mini-frontend:${IMAGE_TAG}
           '''
         }
