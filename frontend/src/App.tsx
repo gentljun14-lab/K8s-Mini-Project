@@ -571,19 +571,29 @@ function App() {
             showSnapshotLabel={showSnapshotLabel}
             onVehicleSelect={handleVehicleSelect}
             onViewportChange={(nextViewport) => {
+              const latPadding = (nextViewport.maxLat - nextViewport.minLat) * 0.18
+              const lngPadding = (nextViewport.maxLng - nextViewport.minLng) * 0.18
+              const bufferedViewport = {
+                minLat: nextViewport.minLat - latPadding,
+                maxLat: nextViewport.maxLat + latPadding,
+                minLng: nextViewport.minLng - lngPadding,
+                maxLng: nextViewport.maxLng + lngPadding,
+                zoom: nextViewport.zoom,
+              }
+
               setViewportFilter((prev) => {
                 if (
                   prev &&
-                  prev.zoom === nextViewport.zoom &&
-                  Math.abs(prev.minLat - nextViewport.minLat) < 0.0001 &&
-                  Math.abs(prev.maxLat - nextViewport.maxLat) < 0.0001 &&
-                  Math.abs(prev.minLng - nextViewport.minLng) < 0.0001 &&
-                  Math.abs(prev.maxLng - nextViewport.maxLng) < 0.0001
+                  prev.zoom === bufferedViewport.zoom &&
+                  Math.abs(prev.minLat - bufferedViewport.minLat) < 0.0001 &&
+                  Math.abs(prev.maxLat - bufferedViewport.maxLat) < 0.0001 &&
+                  Math.abs(prev.minLng - bufferedViewport.minLng) < 0.0001 &&
+                  Math.abs(prev.maxLng - bufferedViewport.maxLng) < 0.0001
                 ) {
                   return prev
                 }
 
-                return nextViewport
+                return bufferedViewport
               })
             }}
           />

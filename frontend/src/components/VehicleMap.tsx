@@ -127,12 +127,14 @@ function inBounds(
     return vehicles.slice(0, maxVisible)
   }
 
+  const paddedBounds = bounds.pad(0.2)
+
   const filtered = vehicles.filter((vehicle) => {
     const pos = getVehicleLocation(vehicle)
     if (!pos) {
       return false
     }
-    return bounds.contains(L.latLng(pos.latitude, pos.longitude))
+    return paddedBounds.contains(L.latLng(pos.latitude, pos.longitude))
   })
 
   const focusedVehicle =
