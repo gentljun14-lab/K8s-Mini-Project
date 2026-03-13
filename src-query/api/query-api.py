@@ -410,6 +410,10 @@ def _vehicle_matches_filter(
     min_lng: Optional[float],
     max_lng: Optional[float],
 ) -> bool:
+    location = vehicle.get("location")
+    if not isinstance(location, dict):
+        location = {}
+
     if vehicle_id and vehicle.get("vehicle_id") != vehicle_id:
         return False
 
@@ -418,7 +422,7 @@ def _vehicle_matches_filter(
 
     vehicle_city = vehicle.get("city")
     if vehicle_city is None:
-        vehicle_city = vehicle.get("location", {}).get("city")
+        vehicle_city = location.get("city")
 
     if city and str(vehicle_city or "").lower() != city.lower():
         return False
@@ -434,8 +438,8 @@ def _vehicle_matches_filter(
     if max_speed is not None and _to_number(vehicle.get("speed_kmh")) > max_speed:
         return False
 
-    latitude = _to_number(vehicle.get("latitude", vehicle.get("location", {}).get("latitude")), 0.0)
-    longitude = _to_number(vehicle.get("longitude", vehicle.get("location", {}).get("longitude")), 0.0)
+    latitude = _to_number(vehicle.get("latitude", location.get("latitude")), 0.0)
+    longitude = _to_number(vehicle.get("longitude", location.get("longitude")), 0.0)
 
     if min_lat is not None and latitude < min_lat:
         return False
@@ -586,26 +590,40 @@ def _filter_updates_by(
     if not updates:
         return []
 
-    if not (vehicle_id or state or city or min_speed is not None or max_speed is not None):
+    if not (
+        vehicle_id or
+        state or
+        city or
+        min_speed is not None or
+        max_speed is not None or
+        min_lat is not None or
+        max_lat is not None or
+        min_lng is not None or
+        max_lng is not None
+    ):
         return updates
 
     filtered: List[Dict[str, Any]] = []
     for item in updates:
+        location = item.get("location")
+        if not isinstance(location, dict):
+            location = {}
+
         if vehicle_id and item.get("vehicle_id") != vehicle_id:
             continue
         if state and item.get("state") != state:
             continue
         item_city = item.get("city")
         if item_city is None:
-            item_city = item.get("location", {}).get("city")
+            item_city = location.get("city")
         if city and str(item_city or "").lower() != city.lower():
             continue
         if min_speed is not None and _to_number(item.get("speed_kmh")) < min_speed:
             continue
         if max_speed is not None and _to_number(item.get("speed_kmh")) > max_speed:
             continue
-        latitude = _to_number(item.get("latitude", item.get("location", {}).get("latitude")), 0.0)
-        longitude = _to_number(item.get("longitude", item.get("location", {}).get("longitude")), 0.0)
+        latitude = _to_number(item.get("latitude", location.get("latitude")), 0.0)
+        longitude = _to_number(item.get("longitude", location.get("longitude")), 0.0)
         if min_lat is not None and latitude < min_lat:
             continue
         if max_lat is not None and latitude > max_lat:
