@@ -29,6 +29,7 @@ const MIN_INTERVAL_MS = 1000
 const SSE_RETRY_MIN_MS = 1000
 const SSE_RETRY_MAX_MS = 15000
 const SSE_MAX_FAILURES_BEFORE_DISABLE = 1
+const REALTIME_STALE_MS = 8000
 
 const QUERY_API_BASE = (() => {
   if (!configuredBase || configuredBase === '/') return '/api'
@@ -284,6 +285,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
   const requestControllerRef = useRef<AbortController | null>(null)
   const sseFailureCountRef = useRef(0)
   const sseDisabledRef = useRef(false)
+  const realtimeWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastRealtimeMessageAtRef = useRef(0)
 
   const filterSignature = useMemo(
     () =>
@@ -314,6 +317,11 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
   )
 
   const closeRealtime = useCallback(() => {
+    if (realtimeWatchdogRef.current) {
+      clearInterval(realtimeWatchdogRef.current)
+      realtimeWatchdogRef.current = null
+    }
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
@@ -325,6 +333,42 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
 
     setIsRealtimeConnected(false)
+  }, [])
+
+  const markRealtimeMessage = useCallback(() => {
+    lastRealtimeMessageAtRef.current = Date.now()
+  }, [])
+
+  const startRealtimeWatchdog = useCallback((mode: 'sse' | 'websocket') => {
+    if (realtimeWatchdogRef.current) {
+      clearInterval(realtimeWatchdogRef.current)
+    }
+
+    lastRealtimeMessageAtRef.current = Date.now()
+    realtimeWatchdogRef.current = window.setInterval(() => {
+      if (!isMountedRef.current) {
+        return
+      }
+
+      if (!lastRealtimeMessageAtRef.current) {
+        return
+      }
+
+      if (Date.now() - lastRealtimeMessageAtRef.current < REALTIME_STALE_MS) {
+        return
+      }
+
+      setError(mode === 'websocket' ? 'WebSocket 응답이 지연되어 재연결합니다.' : 'SSE 응답이 지연되어 재연결합니다.')
+
+      if (mode === 'websocket' && websocketRef.current) {
+        websocketRef.current.close()
+        return
+      }
+
+      if (mode === 'sse' && eventSourceRef.current) {
+        eventSourceRef.current.close()
+      }
+    }, 2000)
   }, [])
 
   const stopPolling = useCallback(() => {
@@ -512,6 +556,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       sseFailureCountRef.current = 0
       sseDisabledRef.current = false
       stopPolling()
+      markRealtimeMessage()
+      startRealtimeWatchdog('sse')
       setIsRealtimeConnected(true)
       setError(null)
       retryDelayRef.current = SSE_RETRY_MIN_MS
@@ -522,6 +568,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
 
       try {
         const parsed = JSON.parse(event.data)
+        markRealtimeMessage()
         if (typeof parsed?.stream_last_id !== 'undefined') {
           sinceRef.current = Math.max(sinceRef.current, parseNumber(parsed.stream_last_id))
         }
@@ -601,6 +648,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     socket.onopen = () => {
       if (!isMountedRef.current) return
       stopPolling()
+      markRealtimeMessage()
+      startRealtimeWatchdog('websocket')
       setIsRealtimeConnected(true)
       setError(null)
       retryDelayRef.current = SSE_RETRY_MIN_MS
@@ -610,6 +659,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       if (!isMountedRef.current) return
       try {
         const parsed = JSON.parse(event.data)
+        markRealtimeMessage()
         if (typeof parsed?.stream_last_id !== 'undefined') {
           sinceRef.current = Math.max(sinceRef.current, parseNumber(parsed.stream_last_id))
         }
