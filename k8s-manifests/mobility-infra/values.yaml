@@ -3,18 +3,18 @@ persistence:
 
 mongo:
   image: "mongo:7"
-  storage: "5Gi"
+  storage: "10Gi"
   retention:
     days: "7"
     minutes: "15"
 
 redis:
   image: "redis:7-alpine"
-  storage: "2Gi"
+  storage: "5Gi"
 
 kafka:
   image: "apache/kafka:3.9.0"
-  storage: "10Gi"
+  storage: "20Gi"
 
 secrets:
   mongoRootUsername: "admin"
