@@ -124,6 +124,11 @@ spec:
                     secretKeyRef:
                       name: mobility-secret
                       key: MONGO_URI
+                - name: MONGO_TTL_MINUTES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: mobility-config
+                      key: MONGO_TTL_MINUTES
                 - name: MONGO_TTL_DAYS
                   valueFrom:
                     configMapKeyRef:
@@ -133,8 +138,13 @@ spec:
                 - "sh"
                 - "-c"
                 - |
+                  RETENTION_MINUTES="${MONGO_TTL_MINUTES}"
+                  if [ -z "$RETENTION_MINUTES" ] || [ "$RETENTION_MINUTES" -le 0 ]; then
+                    RETENTION_MINUTES=$((MONGO_TTL_DAYS * 24 * 60))
+                  fi
+
                   mongosh "$MONGO_URI" --eval "
                     db.getSiblingDB('car_db').telemetry_history.deleteMany({
-                      timestamp: { \$lt: new Date(Date.now() - ${MONGO_TTL_DAYS} * 24 * 60 * 60 * 1000) }
+                      created_at: { \$lt: new Date(Date.now() - ${RETENTION_MINUTES} * 60 * 1000) }
                     })
                   "

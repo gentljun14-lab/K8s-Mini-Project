@@ -17,6 +17,9 @@ FROM nginx:alpine
 # 빌드 결과물 복사
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# 타일 캐시 디렉터리 준비
+RUN mkdir -p /var/cache/nginx/tiles && chown -R nginx:nginx /var/cache/nginx
+
 # nginx.conf를 템플릿으로 복사 (envsubst가 환경변수 치환해줌)
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 

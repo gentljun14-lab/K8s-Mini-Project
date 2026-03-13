@@ -41,10 +41,12 @@ def start_consumer():
         collection = db[mongo_col_name]
         mongo_client.admin.command("ping")
 
+        ttl_minutes = int(os.getenv("MONGO_TTL_MINUTES", "0"))
         ttl_days = int(os.getenv("MONGO_TTL_DAYS", "7"))
+        ttl_seconds = ttl_minutes * 60 if ttl_minutes > 0 else ttl_days * 24 * 60 * 60
         collection.create_index(
             "created_at",
-            expireAfterSeconds=ttl_days * 24 * 60 * 60,
+            expireAfterSeconds=ttl_seconds,
             name="telemetry_created_at_ttl",
         )
         print(f"[INFO] MongoDB connected: {mongo_db_name}.{mongo_col_name}")

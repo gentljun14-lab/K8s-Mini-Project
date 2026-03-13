@@ -6,6 +6,7 @@ mongo:
   storage: "5Gi"
   retention:
     days: "7"
+    minutes: "15"
 
 redis:
   image: "redis:7-alpine"

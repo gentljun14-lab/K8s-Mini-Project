@@ -20,6 +20,7 @@ data:
   MONGO_DB: "car_db"
   MONGO_COLLECTION: "telemetry_history"
   MONGO_TTL_DAYS: {{ .Values.mongo.retention.days | quote }}
+  MONGO_TTL_MINUTES: {{ default "10080" .Values.mongo.retention.minutes | quote }}
 
   # --- Redis ---
   REDIS_HOST: "redis-svc"
