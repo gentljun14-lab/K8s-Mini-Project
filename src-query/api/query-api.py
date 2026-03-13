@@ -854,6 +854,10 @@ def list_vehicles_compact(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     limit: int = Query(default=DEFAULT_LIMIT),
 ) -> Dict[str, Any]:
     normalized_limit = min(max(1, limit), MAX_LIMIT)
@@ -864,6 +868,10 @@ def list_vehicles_compact(
         min_speed=min_speed,
         max_speed=max_speed,
         since_ms=since or None,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
         compact=True,
     )
 
@@ -880,6 +888,10 @@ def list_vehicles_delta(
     summary: bool = Query(default=False),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     limit: int = Query(default=DEFAULT_LIMIT),
 ) -> Dict[str, Any]:
     updates = _filter_updates_by(
@@ -889,6 +901,10 @@ def list_vehicles_delta(
         city=city,
         min_speed=min_speed,
         max_speed=max_speed,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
     )
 
     normalized_limit = min(max(1, limit), MAX_LIMIT)
@@ -908,6 +924,10 @@ def list_vehicle_changes(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     compact: bool = Query(default=True),
     limit: int = Query(default=DEFAULT_LIMIT),
     summary: bool = Query(default=False),
@@ -920,6 +940,10 @@ def list_vehicle_changes(
         city=city,
         min_speed=min_speed,
         max_speed=max_speed,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
     )
     if summary:
         updates = [_build_vehicle_summary(item) for item in updates]
