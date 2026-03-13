@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
 from pymongo import MongoClient
-from pymongo.errors import BulkWriteError
+from pymongo.errors import BulkWriteError, OperationFailure
 
 RUNNING = True
 
@@ -19,6 +19,32 @@ def _handle_sigterm(signum, frame):
 
 signal.signal(signal.SIGTERM, _handle_sigterm)
 signal.signal(signal.SIGINT, _handle_sigterm)
+
+
+def _ensure_ttl_index(db, collection, collection_name: str, ttl_seconds: int):
+    index_name = "telemetry_created_at_ttl"
+
+    try:
+        collection.create_index(
+            "created_at",
+            expireAfterSeconds=ttl_seconds,
+            name=index_name,
+        )
+        return
+    except OperationFailure as exc:
+        message = str(exc)
+        if "IndexOptionsConflict" not in message and "already exists with different options" not in message:
+            raise
+
+    db.command(
+        {
+            "collMod": collection_name,
+            "index": {
+                "name": index_name,
+                "expireAfterSeconds": ttl_seconds,
+            },
+        }
+    )
 
 
 def start_consumer():
@@ -44,11 +70,7 @@ def start_consumer():
         ttl_minutes = int(os.getenv("MONGO_TTL_MINUTES", "0"))
         ttl_days = int(os.getenv("MONGO_TTL_DAYS", "7"))
         ttl_seconds = ttl_minutes * 60 if ttl_minutes > 0 else ttl_days * 24 * 60 * 60
-        collection.create_index(
-            "created_at",
-            expireAfterSeconds=ttl_seconds,
-            name="telemetry_created_at_ttl",
-        )
+        _ensure_ttl_index(db, collection, mongo_col_name, ttl_seconds)
         print(f"[INFO] MongoDB connected: {mongo_db_name}.{mongo_col_name}")
     except Exception as e:
         print(f"[ERROR] MongoDB connection failed: {e}")
