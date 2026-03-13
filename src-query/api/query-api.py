@@ -955,67 +955,6 @@ def list_vehicle_changes(
     }
 
 
-@app.get("/api/vehicles/{vehicle_id}")
-def get_vehicle(vehicle_id: str) -> Dict[str, Any]:
-    key = f"vehicle:{vehicle_id}:latest"
-    raw_value = redis_client.get(key)
-    if not raw_value:
-        raise HTTPException(status_code=404, detail="vehicle not found")
-
-    payload = _safe_json_loads(raw_value)
-    if payload is None:
-        raise HTTPException(status_code=500, detail="invalid vehicle payload")
-
-    return _build_full_vehicle(payload if isinstance(payload, dict) else {})
-
-
-@app.get("/api/vehicles/{vehicle_id}/history")
-def get_vehicle_history(
-    vehicle_id: str,
-    since: int = Query(default=0, alias="since"),
-    limit: int = Query(default=20),
-) -> Dict[str, Any]:
-    max_limit = min(max(1, limit), 500)
-
-    try:
-        entries = redis_client.xrevrange(VEHICLE_UPDATE_STREAM, count=1000)
-    except Exception:
-        return {"vehicle_id": vehicle_id, "count": 0, "history": []}
-
-    history: List[Dict[str, Any]] = []
-    for _, fields in entries:
-        if not isinstance(fields, dict):
-            continue
-        if fields.get("vehicle_id") != vehicle_id:
-            continue
-
-        event_ts = _to_int(fields.get("event_ts"))
-        if since and event_ts <= since:
-            continue
-
-        raw_snapshot = fields.get("v")
-        payload = _safe_json_loads(raw_snapshot)
-        if payload is None and isinstance(raw_snapshot, dict):
-            payload = raw_snapshot
-
-        if not isinstance(payload, dict):
-            continue
-
-        snapshot = _build_vehicle_snapshot(payload if isinstance(payload, dict) else {})
-        snapshot["event_ts"] = event_ts
-        history.append(snapshot)
-
-        if len(history) >= max_limit:
-            break
-
-    history.sort(key=lambda item: _to_int(item.get("event_ts")))
-    return {
-        "vehicle_id": vehicle_id,
-        "count": len(history),
-        "history": history,
-    }
-
-
 @app.get("/api/vehicles/stream")
 async def stream_vehicles(
     request: Request,
@@ -1190,6 +1129,67 @@ async def websocket_vehicles(
             await asyncio.sleep(1)
     except WebSocketDisconnect:
         return
+
+
+@app.get("/api/vehicles/{vehicle_id}")
+def get_vehicle(vehicle_id: str) -> Dict[str, Any]:
+    key = f"vehicle:{vehicle_id}:latest"
+    raw_value = redis_client.get(key)
+    if not raw_value:
+        raise HTTPException(status_code=404, detail="vehicle not found")
+
+    payload = _safe_json_loads(raw_value)
+    if payload is None:
+        raise HTTPException(status_code=500, detail="invalid vehicle payload")
+
+    return _build_full_vehicle(payload if isinstance(payload, dict) else {})
+
+
+@app.get("/api/vehicles/{vehicle_id}/history")
+def get_vehicle_history(
+    vehicle_id: str,
+    since: int = Query(default=0, alias="since"),
+    limit: int = Query(default=20),
+) -> Dict[str, Any]:
+    max_limit = min(max(1, limit), 500)
+
+    try:
+        entries = redis_client.xrevrange(VEHICLE_UPDATE_STREAM, count=1000)
+    except Exception:
+        return {"vehicle_id": vehicle_id, "count": 0, "history": []}
+
+    history: List[Dict[str, Any]] = []
+    for _, fields in entries:
+        if not isinstance(fields, dict):
+            continue
+        if fields.get("vehicle_id") != vehicle_id:
+            continue
+
+        event_ts = _to_int(fields.get("event_ts"))
+        if since and event_ts <= since:
+            continue
+
+        raw_snapshot = fields.get("v")
+        payload = _safe_json_loads(raw_snapshot)
+        if payload is None and isinstance(raw_snapshot, dict):
+            payload = raw_snapshot
+
+        if not isinstance(payload, dict):
+            continue
+
+        snapshot = _build_vehicle_snapshot(payload if isinstance(payload, dict) else {})
+        snapshot["event_ts"] = event_ts
+        history.append(snapshot)
+
+        if len(history) >= max_limit:
+            break
+
+    history.sort(key=lambda item: _to_int(item.get("event_ts")))
+    return {
+        "vehicle_id": vehicle_id,
+        "count": len(history),
+        "history": history,
+    }
 
 
 if __name__ == "__main__":
