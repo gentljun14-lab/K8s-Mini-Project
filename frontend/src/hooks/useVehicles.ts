@@ -13,6 +13,7 @@ import type { RawVehicleData } from '../types/vehicle'
 
 type VehicleQueryFilters = {
   vehicleId?: string
+  includeVehicleId?: string
   state?: string
   city?: string
   minSpeed?: number
@@ -275,6 +276,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     () =>
       JSON.stringify({
         vehicleId: filters?.vehicleId?.trim() || '',
+        includeVehicleId: filters?.includeVehicleId?.trim() || '',
         state: filters?.state?.trim() || '',
         city: filters?.city?.trim() || '',
         minSpeed: filters?.minSpeed ?? null,
@@ -286,6 +288,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       }),
     [
       filters?.vehicleId,
+      filters?.includeVehicleId,
       filters?.state,
       filters?.city,
       filters?.minSpeed,
@@ -350,6 +353,9 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
   function addFilters(url: URL) {
     if (filters?.vehicleId) {
       url.searchParams.set('vehicle_id', filters.vehicleId)
+    }
+    if (filters?.includeVehicleId) {
+      url.searchParams.set('includeVehicleId', filters.includeVehicleId)
     }
     if (filters?.state) {
       url.searchParams.set('state', filters.state)

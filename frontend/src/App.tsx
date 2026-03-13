@@ -13,20 +13,6 @@ function App() {
     maxLng: number
     zoom: number
   } | null>(null)
-  const { vehicles, loading, error, lastUpdated, isRealtimeConnected } = useVehicles(1000, {
-    enableSSE: transportMode !== 'polling',
-    useCompact: true,
-    useWebSocket: transportMode === 'websocket',
-    allowPollingFallback: transportMode === 'polling',
-    filters: viewportFilter
-      ? {
-          minLat: viewportFilter.minLat,
-          maxLat: viewportFilter.maxLat,
-          minLng: viewportFilter.minLng,
-          maxLng: viewportFilter.maxLng,
-        }
-      : undefined,
-  })
 
   const [showStatusOverlay, setShowStatusOverlay] = useState(true)
   const [showSnapshotLabel, setShowSnapshotLabel] = useState(false)
@@ -43,6 +29,24 @@ function App() {
   const [replayError, setReplayError] = useState<string | null>(null)
   const [allVehicleIds, setAllVehicleIds] = useState<string[]>([])
   const [totalVehicleCount, setTotalVehicleCount] = useState(0)
+
+  const { vehicles, loading, error, lastUpdated, isRealtimeConnected } = useVehicles(1000, {
+    enableSSE: transportMode !== 'polling',
+    useCompact: true,
+    useWebSocket: transportMode === 'websocket',
+    allowPollingFallback: transportMode === 'polling',
+    filters: viewportFilter
+      ? {
+          includeVehicleId: focusTracking ? focusedVehicleId ?? undefined : undefined,
+          minLat: viewportFilter.minLat,
+          maxLat: viewportFilter.maxLat,
+          minLng: viewportFilter.minLng,
+          maxLng: viewportFilter.maxLng,
+        }
+      : focusTracking && focusedVehicleId
+        ? { includeVehicleId: focusedVehicleId }
+        : undefined,
+  })
 
   useEffect(() => {
     let cancelled = false
