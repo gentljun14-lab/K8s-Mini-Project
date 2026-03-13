@@ -186,6 +186,10 @@ function parseVehicles(payload: unknown): Vehicle[] {
   return []
 }
 
+function getVehicleClock(vehicle: Vehicle): number {
+  return normalizeTimestamp(vehicle.event_ts, parseReceivedAt(vehicle.received_at))
+}
+
 export function parseReplayFrames(payload: unknown): Vehicle[][] {
   if (!payload || typeof payload !== 'object') {
     return []
@@ -218,8 +222,17 @@ function applyVehicles(prev: Vehicle[], next: Vehicle[]): Vehicle[] {
       return
     }
 
+    const existing = map.get(vehicle.vehicle_id)
+    if (existing) {
+      const existingClock = getVehicleClock(existing)
+      const incomingClock = getVehicleClock(vehicle)
+      if (incomingClock > 0 && existingClock > incomingClock) {
+        return
+      }
+    }
+
     map.set(vehicle.vehicle_id, {
-      ...map.get(vehicle.vehicle_id),
+      ...existing,
       ...vehicle,
     })
   })
@@ -509,6 +522,13 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
 
       try {
         const parsed = JSON.parse(event.data)
+        if (typeof parsed?.stream_last_id !== 'undefined') {
+          sinceRef.current = Math.max(sinceRef.current, parseNumber(parsed.stream_last_id))
+        }
+        if (parsed?.type === 'error') {
+          setError(typeof parsed?.message === 'string' ? parsed.message : 'SSE 오류가 발생했습니다.')
+          return
+        }
         if (parsed?.type === 'heartbeat') {
           return
         }
@@ -590,6 +610,16 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       if (!isMountedRef.current) return
       try {
         const parsed = JSON.parse(event.data)
+        if (typeof parsed?.stream_last_id !== 'undefined') {
+          sinceRef.current = Math.max(sinceRef.current, parseNumber(parsed.stream_last_id))
+        }
+        if (parsed?.type === 'subscribed' || parsed?.type === 'heartbeat') {
+          return
+        }
+        if (parsed?.type === 'error') {
+          setError(typeof parsed?.message === 'string' ? parsed.message : 'WebSocket 오류가 발생했습니다.')
+          return
+        }
         if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
           const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
           setVehicles(normalized)
@@ -608,6 +638,11 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
         if (!isMountedRef.current) return
         setError('잘못된 실시간 데이터 형식입니다.')
       }
+    }
+
+    socket.onerror = () => {
+      if (!isMountedRef.current) return
+      setError('WebSocket 연결 중 오류가 발생했습니다.')
     }
 
     socket.onclose = () => {

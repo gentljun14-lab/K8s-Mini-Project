@@ -1172,6 +1172,16 @@ async def websocket_vehicles(
     await websocket.accept()
     current_since = max(0, since)
     try:
+        await websocket.send_text(
+            _safe_json_dumps(
+                {
+                    "type": "subscribed",
+                    "transport": "websocket",
+                    "stream_last_id": _latest_stream_id(),
+                    "received_at": int(time.time() * 1000),
+                }
+            )
+        )
         try:
             snapshot = _collect_vehicles_from_latest(
                 compact=compact,
@@ -1205,6 +1215,7 @@ async def websocket_vehicles(
                     "count": len(snapshot),
                     "vehicles": snapshot,
                     "stream_last_id": _latest_stream_id(),
+                    "received_at": int(time.time() * 1000),
                 }
             )
         )
@@ -1247,12 +1258,24 @@ async def websocket_vehicles(
                             "type": "delta",
                             "count": len(updates),
                             "updates": updates,
+                            "stream_last_id": _latest_stream_id(),
+                            "received_at": int(time.time() * 1000),
                         }
                     )
                 )
                 current_since = max(
                     current_since,
                     max((_to_int(item.get("event_ts")) for item in updates), default=current_since),
+                )
+            else:
+                await websocket.send_text(
+                    _safe_json_dumps(
+                        {
+                            "type": "heartbeat",
+                            "stream_last_id": _latest_stream_id(),
+                            "received_at": int(time.time() * 1000),
+                        }
+                    )
                 )
 
             await asyncio.sleep(1)
