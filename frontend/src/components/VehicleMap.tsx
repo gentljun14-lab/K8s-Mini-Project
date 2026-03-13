@@ -116,7 +116,12 @@ function maxVisibleMarkersForZoom(zoom: number | null): number {
   return 1200
 }
 
-function inBounds(vehicles: Vehicle[], bounds: L.LatLngBounds | null, zoom: number | null): Vehicle[] {
+function inBounds(
+  vehicles: Vehicle[],
+  bounds: L.LatLngBounds | null,
+  zoom: number | null,
+  focusedVehicleId?: string | null,
+): Vehicle[] {
   const maxVisible = maxVisibleMarkersForZoom(zoom)
   if (!bounds) {
     return vehicles.slice(0, maxVisible)
@@ -129,6 +134,18 @@ function inBounds(vehicles: Vehicle[], bounds: L.LatLngBounds | null, zoom: numb
     }
     return bounds.contains(L.latLng(pos.latitude, pos.longitude))
   })
+
+  const focusedVehicle =
+    focusedVehicleId
+      ? vehicles.find((vehicle) => vehicle.vehicle_id === focusedVehicleId) ?? null
+      : null
+
+  if (
+    focusedVehicle &&
+    !filtered.some((vehicle) => vehicle.vehicle_id === focusedVehicle.vehicle_id)
+  ) {
+    filtered.unshift(focusedVehicle)
+  }
 
   return filtered.slice(0, maxVisible)
 }
@@ -210,10 +227,16 @@ function FocusController({
       return
     }
 
-    map.flyTo([pos.latitude, pos.longitude], 16, {
-      animate: true,
-      duration: 0.8,
+    map.stop()
+    map.setView([pos.latitude, pos.longitude], Math.max(map.getZoom(), 16), {
+      animate: false,
     })
+
+    const refreshMap = () => map.invalidateSize(false)
+    refreshMap()
+    const timer = window.setTimeout(refreshMap, 120)
+
+    return () => window.clearTimeout(timer)
   }, [focusedVehicleId, vehicles, map])
 
   return null
@@ -302,7 +325,10 @@ export default function VehicleMap({
 }: VehicleMapProps) {
   const [bounds, setBounds] = useState<L.LatLngBounds | null>(null)
   const [zoom, setZoom] = useState<number | null>(null)
-  const visibleVehicles = useMemo(() => inBounds(vehicles, bounds, zoom), [vehicles, bounds, zoom])
+  const visibleVehicles = useMemo(
+    () => inBounds(vehicles, bounds, zoom, focusedVehicleId),
+    [vehicles, bounds, focusedVehicleId, zoom],
+  )
 
   return (
     <MapContainer
