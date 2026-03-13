@@ -231,6 +231,7 @@ interface UseVehiclesOptions {
   enableSSE?: boolean
   useCompact?: boolean
   useWebSocket?: boolean
+  allowPollingFallback?: boolean
   filters?: VehicleQueryFilters
 }
 
@@ -247,6 +248,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     enableSSE = true,
     useCompact = true,
     useWebSocket = false,
+    allowPollingFallback = true,
     filters,
   } = options
   const clampedIntervalMs = Math.max(MIN_INTERVAL_MS, intervalMs)
@@ -528,14 +530,18 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     eventSource.onerror = () => {
       if (!isMountedRef.current) return
       closeRealtime()
-      if (!intervalRef.current) {
+      if (allowPollingFallback && !intervalRef.current) {
         startPolling()
       }
 
       sseFailureCountRef.current += 1
       if (sseFailureCountRef.current >= SSE_MAX_FAILURES_BEFORE_DISABLE) {
         sseDisabledRef.current = true
-        setError('SSE(/api/vehicles/stream)가 응답하지 않아 폴링(/api/vehicles/changes)으로 전환합니다.')
+        setError(
+          allowPollingFallback
+            ? 'SSE(/api/vehicles/stream)가 응답하지 않아 폴링(/api/vehicles/changes)으로 전환합니다.'
+            : 'SSE(/api/vehicles/stream)가 응답하지 않습니다.',
+        )
         return
       }
 
@@ -604,7 +610,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
         return
       }
 
-      if (!intervalRef.current) {
+      if (allowPollingFallback && !intervalRef.current) {
         startPolling()
       }
 
@@ -707,12 +713,12 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       if (enableSSE) {
         if (useWebSocket) {
           connectWebSocket()
-          if (!websocketRef.current) {
+          if (allowPollingFallback && !websocketRef.current) {
             startPolling()
           }
         } else {
           connectSse()
-          if (!eventSourceRef.current) {
+          if (allowPollingFallback && !eventSourceRef.current) {
             startPolling()
           }
         }
@@ -738,6 +744,7 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     clampedIntervalMs,
     enableSSE,
     filterSignature,
+    allowPollingFallback,
     useCompact,
     useWebSocket,
   ])

@@ -17,6 +17,7 @@ function App() {
     enableSSE: transportMode !== 'polling',
     useCompact: true,
     useWebSocket: transportMode === 'websocket',
+    allowPollingFallback: transportMode === 'polling',
     filters: viewportFilter
       ? {
           minLat: viewportFilter.minLat,
