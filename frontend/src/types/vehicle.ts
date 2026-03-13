@@ -117,3 +117,9 @@ export interface VehicleReplayResponse {
   since_ms?: number
   detail?: string
 }
+
+export interface VehicleIdsResponse {
+  count: number
+  vehicle_ids: string[]
+  stream_last_id?: number
+}

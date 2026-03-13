@@ -5,7 +5,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -667,6 +667,24 @@ def health() -> Dict[str, Any]:
     }
 
 
+@app.get("/api/vehicles/ids")
+def list_vehicle_ids() -> Dict[str, Any]:
+    ids = sorted(
+        {
+            _coerce_str(payload.get("vehicle_id"))
+            for payload in _latest_payloads()
+            if _coerce_str(payload.get("vehicle_id"))
+        },
+        key=lambda value: value,
+    )
+
+    return {
+        "count": len(ids),
+        "vehicle_ids": ids,
+        "stream_last_id": _latest_stream_id(),
+    }
+
+
 @app.get("/api/vehicles")
 def list_vehicles(
     state: Optional[str] = Query(default=None),
@@ -991,7 +1009,7 @@ async def stream_vehicles(
     heartbeat_ms: int = Query(default=1000),
     max_updates: int = Query(default=1000),
 ):
-    async def _generator() -> asyncio.AsyncGenerator[str, None]:
+    async def _generator() -> AsyncGenerator[str, None]:
         current_since = max(0, since)
 
         try:
@@ -1089,7 +1107,15 @@ async def stream_vehicles(
 
             await asyncio.sleep(max(0.5, heartbeat_ms / 1000))
 
-    return StreamingResponse(_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.websocket("/api/vehicles/ws")

@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import VehicleMap from './components/VehicleMap'
 import { buildApiUrl, parseReplayFrames, useVehicles } from './hooks/useVehicles'
-import type { Vehicle } from './types/vehicle'
+import type { Vehicle, VehicleIdsResponse } from './types/vehicle'
 import './App.css'
 
 function App() {
@@ -41,28 +41,63 @@ function App() {
   const [replayPlay, setReplayPlay] = useState(true)
   const [replayLoading, setReplayLoading] = useState(false)
   const [replayError, setReplayError] = useState<string | null>(null)
+  const [allVehicleIds, setAllVehicleIds] = useState<string[]>([])
+  const [totalVehicleCount, setTotalVehicleCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadVehicleIds = async () => {
+      try {
+        const response = await fetch(buildApiUrl('/api/vehicles/ids'), {
+          headers: { 'Cache-Control': 'no-cache' },
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const payload = await response.json() as VehicleIdsResponse
+        const ids = Array.isArray(payload.vehicle_ids)
+          ? [...payload.vehicle_ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+          : []
+
+        if (!cancelled) {
+          setAllVehicleIds(ids)
+          setTotalVehicleCount(typeof payload.count === 'number' ? payload.count : ids.length)
+        }
+      } catch {
+        if (!cancelled) {
+          setAllVehicleIds([])
+          setTotalVehicleCount(0)
+        }
+      }
+    }
+
+    void loadVehicleIds()
+    const timer = window.setInterval(() => {
+      void loadVehicleIds()
+    }, 15000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     if (!focusTracking) {
       return
     }
 
-    if (!focusedVehicleId && vehicles.length > 0) {
-      setFocusedVehicleId(vehicles[0].vehicle_id)
+    if (!focusedVehicleId && allVehicleIds.length > 0) {
+      setFocusedVehicleId(allVehicleIds[0])
     }
-
-    if (focusedVehicleId && vehicles.length > 0 && !vehicles.some((v) => v.vehicle_id === focusedVehicleId)) {
-      setFocusedVehicleId(vehicles[0].vehicle_id)
-    }
-  }, [focusTracking, focusedVehicleId, vehicles])
+  }, [allVehicleIds, focusTracking, focusedVehicleId])
 
   const vehicleOptions = useMemo(() => {
-    const ids = new Set<string>()
-    vehicles.forEach((vehicle) => {
-      ids.add(vehicle.vehicle_id)
-    })
-    return [...ids].sort((a, b) => a.localeCompare(b))
-  }, [vehicles])
+    return allVehicleIds
+  }, [allVehicleIds])
 
   useEffect(() => {
     if (!focusSearchText && focusedVehicleId) {
@@ -183,9 +218,10 @@ function App() {
 
   const dashboardStats = useMemo(() => ([
     { label: '표시 차량', value: String(mapVehicles.length) },
+    { label: '전체 차량', value: String(totalVehicleCount) },
     { label: '포커스', value: focusedVehicleId ?? '없음' },
     { label: '업데이트', value: lastUpdated ? lastUpdated.toLocaleTimeString() : '대기 중' },
-  ]), [focusedVehicleId, lastUpdated, mapVehicles.length])
+  ]), [focusedVehicleId, lastUpdated, mapVehicles.length, totalVehicleCount])
 
   const mapStatus = useMemo(() => {
     if (replayMode) {
