@@ -16,7 +16,7 @@ const DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon
 
 const TILE_URL = '/api/map/tiles/{z}/{y}/{x}'
-const MAX_VISIBLE_MARKERS = 1200
+const ICON_CACHE = new Map<string, L.DivIcon>()
 
 type VehicleMapProps = {
   vehicles: Vehicle[]
@@ -24,6 +24,13 @@ type VehicleMapProps = {
   showStatusOverlay: boolean
   showSnapshotLabel: boolean
   onVehicleSelect: (vehicleId: string) => void
+  onViewportChange?: (viewport: {
+    minLat: number
+    maxLat: number
+    minLng: number
+    maxLng: number
+    zoom: number
+  }) => void
 }
 
 type VehiclePoint = {
@@ -100,9 +107,19 @@ function buildVehicleLabel(vehicle: Vehicle) {
   }
 }
 
-function inBounds(vehicles: Vehicle[], bounds: L.LatLngBounds | null): Vehicle[] {
+function maxVisibleMarkersForZoom(zoom: number | null): number {
+  if (zoom === null) return 300
+  if (zoom <= 7) return 180
+  if (zoom <= 9) return 320
+  if (zoom <= 11) return 520
+  if (zoom <= 13) return 800
+  return 1200
+}
+
+function inBounds(vehicles: Vehicle[], bounds: L.LatLngBounds | null, zoom: number | null): Vehicle[] {
+  const maxVisible = maxVisibleMarkersForZoom(zoom)
   if (!bounds) {
-    return vehicles.slice(0, MAX_VISIBLE_MARKERS)
+    return vehicles.slice(0, maxVisible)
   }
 
   const filtered = vehicles.filter((vehicle) => {
@@ -113,7 +130,7 @@ function inBounds(vehicles: Vehicle[], bounds: L.LatLngBounds | null): Vehicle[]
     return bounds.contains(L.latLng(pos.latitude, pos.longitude))
   })
 
-  return filtered.slice(0, MAX_VISIBLE_MARKERS)
+  return filtered.slice(0, maxVisible)
 }
 
 function getStateColor(state: string): string {
@@ -137,25 +154,33 @@ function getStateColor(state: string): string {
 function MapBoundsTracker({
   onBoundsChange,
 }: {
-  onBoundsChange: (bounds: L.LatLngBounds) => void
+  onBoundsChange: (bounds: L.LatLngBounds, zoom: number) => void
 }) {
   useMapEvents({
-    moveend: (event) => onBoundsChange(event.target.getBounds()),
-    zoomend: (event) => onBoundsChange(event.target.getBounds()),
-    load: (event) => onBoundsChange(event.target.getBounds()),
+    moveend: (event) => onBoundsChange(event.target.getBounds(), event.target.getZoom()),
+    zoomend: (event) => onBoundsChange(event.target.getBounds(), event.target.getZoom()),
+    load: (event) => onBoundsChange(event.target.getBounds(), event.target.getZoom()),
   })
 
   return null
 }
 
 function createPinClass(selected: boolean, state: string): L.DivIcon {
+  const key = `${selected ? 'selected' : 'normal'}:${state.toUpperCase()}`
+  const cached = ICON_CACHE.get(key)
+  if (cached) {
+    return cached
+  }
+
   const color = selected ? '#2f8cff' : getStateColor(state)
-  return L.divIcon({
+  const icon = L.divIcon({
     className: '',
     html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.45)"></div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   })
+  ICON_CACHE.set(key, icon)
+  return icon
 }
 
 function FocusController({
@@ -270,22 +295,40 @@ export default function VehicleMap({
   showStatusOverlay,
   showSnapshotLabel,
   onVehicleSelect,
+  onViewportChange,
 }: VehicleMapProps) {
   const [bounds, setBounds] = useState<L.LatLngBounds | null>(null)
-  const visibleVehicles = useMemo(() => inBounds(vehicles, bounds), [vehicles, bounds])
+  const [zoom, setZoom] = useState<number | null>(null)
+  const visibleVehicles = useMemo(() => inBounds(vehicles, bounds, zoom), [vehicles, bounds, zoom])
 
   return (
     <MapContainer
       center={[36.5, 127.5]}
       zoom={7}
       style={{ width: '100%', height: '100%' }}
+      preferCanvas
     >
-      <MapBoundsTracker onBoundsChange={setBounds} />
+      <MapBoundsTracker
+        onBoundsChange={(nextBounds, nextZoom) => {
+          setBounds(nextBounds)
+          setZoom(nextZoom)
+          onViewportChange?.({
+            minLat: nextBounds.getSouth(),
+            maxLat: nextBounds.getNorth(),
+            minLng: nextBounds.getWest(),
+            maxLng: nextBounds.getEast(),
+            zoom: nextZoom,
+          })
+        }}
+      />
       <FocusController focusedVehicleId={focusedVehicleId} vehicles={vehicles} />
       <TileLayer
         url={TILE_URL}
         attribution='&copy; OpenStreetMap contributors'
         maxZoom={19}
+        keepBuffer={6}
+        updateWhenZooming={false}
+        updateWhenIdle
       />
 
       {visibleVehicles.map((vehicle) => (

@@ -5,9 +5,24 @@ import type { Vehicle } from './types/vehicle'
 import './App.css'
 
 function App() {
+  const [viewportFilter, setViewportFilter] = useState<{
+    minLat: number
+    maxLat: number
+    minLng: number
+    maxLng: number
+    zoom: number
+  } | null>(null)
   const { vehicles, loading, error, lastUpdated, isRealtimeConnected } = useVehicles(1000, {
     enableSSE: true,
     useCompact: true,
+    filters: viewportFilter
+      ? {
+          minLat: viewportFilter.minLat,
+          maxLat: viewportFilter.maxLat,
+          minLng: viewportFilter.minLng,
+          maxLng: viewportFilter.maxLng,
+        }
+      : undefined,
   })
 
   const [showStatusOverlay, setShowStatusOverlay] = useState(true)
@@ -481,6 +496,22 @@ function App() {
             showStatusOverlay={showStatusOverlay}
             showSnapshotLabel={showSnapshotLabel}
             onVehicleSelect={handleVehicleSelect}
+            onViewportChange={(nextViewport) => {
+              setViewportFilter((prev) => {
+                if (
+                  prev &&
+                  prev.zoom === nextViewport.zoom &&
+                  Math.abs(prev.minLat - nextViewport.minLat) < 0.0001 &&
+                  Math.abs(prev.maxLat - nextViewport.maxLat) < 0.0001 &&
+                  Math.abs(prev.minLng - nextViewport.minLng) < 0.0001 &&
+                  Math.abs(prev.maxLng - nextViewport.maxLng) < 0.0001
+                ) {
+                  return prev
+                }
+
+                return nextViewport
+              })
+            }}
           />
         </div>
       </div>

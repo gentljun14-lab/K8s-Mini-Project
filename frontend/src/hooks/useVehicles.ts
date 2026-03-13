@@ -17,6 +17,10 @@ type VehicleQueryFilters = {
   city?: string
   minSpeed?: number
   maxSpeed?: number
+  minLat?: number
+  maxLat?: number
+  minLng?: number
+  maxLng?: number
 }
 
 const configuredBase = (import.meta.env.VITE_QUERY_API_URL || '/api').trim()
@@ -273,6 +277,10 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
         city: filters?.city?.trim() || '',
         minSpeed: filters?.minSpeed ?? null,
         maxSpeed: filters?.maxSpeed ?? null,
+        minLat: filters?.minLat ?? null,
+        maxLat: filters?.maxLat ?? null,
+        minLng: filters?.minLng ?? null,
+        maxLng: filters?.maxLng ?? null,
       }),
     [
       filters?.vehicleId,
@@ -280,6 +288,10 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
       filters?.city,
       filters?.minSpeed,
       filters?.maxSpeed,
+      filters?.minLat,
+      filters?.maxLat,
+      filters?.minLng,
+      filters?.maxLng,
     ],
   )
 
@@ -348,6 +360,18 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
     if (filters?.maxSpeed !== undefined) {
       url.searchParams.set('maxSpeed', String(filters.maxSpeed))
+    }
+    if (filters?.minLat !== undefined) {
+      url.searchParams.set('minLat', String(filters.minLat))
+    }
+    if (filters?.maxLat !== undefined) {
+      url.searchParams.set('maxLat', String(filters.maxLat))
+    }
+    if (filters?.minLng !== undefined) {
+      url.searchParams.set('minLng', String(filters.minLng))
+    }
+    if (filters?.maxLng !== undefined) {
+      url.searchParams.set('maxLng', String(filters.maxLng))
     }
   }
 

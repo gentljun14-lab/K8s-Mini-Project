@@ -405,6 +405,10 @@ def _vehicle_matches_filter(
     min_speed: Optional[float],
     max_speed: Optional[float],
     since_ms: Optional[int],
+    min_lat: Optional[float],
+    max_lat: Optional[float],
+    min_lng: Optional[float],
+    max_lng: Optional[float],
 ) -> bool:
     if vehicle_id and vehicle.get("vehicle_id") != vehicle_id:
         return False
@@ -428,6 +432,18 @@ def _vehicle_matches_filter(
         return False
 
     if max_speed is not None and _to_number(vehicle.get("speed_kmh")) > max_speed:
+        return False
+
+    latitude = _to_number(vehicle.get("latitude", vehicle.get("location", {}).get("latitude")), 0.0)
+    longitude = _to_number(vehicle.get("longitude", vehicle.get("location", {}).get("longitude")), 0.0)
+
+    if min_lat is not None and latitude < min_lat:
+        return False
+    if max_lat is not None and latitude > max_lat:
+        return False
+    if min_lng is not None and longitude < min_lng:
+        return False
+    if max_lng is not None and longitude > max_lng:
         return False
 
     return True
@@ -465,6 +481,10 @@ def _collect_vehicles_from_latest(
     min_speed: Optional[float] = None,
     max_speed: Optional[float] = None,
     since_ms: Optional[int] = None,
+    min_lat: Optional[float] = None,
+    max_lat: Optional[float] = None,
+    min_lng: Optional[float] = None,
+    max_lng: Optional[float] = None,
     compact: bool = False,
     summary: bool = False,
 ) -> List[Dict[str, Any]]:
@@ -484,6 +504,10 @@ def _collect_vehicles_from_latest(
             min_speed=min_speed,
             max_speed=max_speed,
             since_ms=since_ms,
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lng=min_lng,
+            max_lng=max_lng,
         ):
             items.append(candidate)
 
@@ -554,6 +578,10 @@ def _filter_updates_by(
     city: Optional[str],
     min_speed: Optional[float],
     max_speed: Optional[float],
+    min_lat: Optional[float],
+    max_lat: Optional[float],
+    min_lng: Optional[float],
+    max_lng: Optional[float],
 ) -> List[Dict[str, Any]]:
     if not updates:
         return []
@@ -575,6 +603,16 @@ def _filter_updates_by(
         if min_speed is not None and _to_number(item.get("speed_kmh")) < min_speed:
             continue
         if max_speed is not None and _to_number(item.get("speed_kmh")) > max_speed:
+            continue
+        latitude = _to_number(item.get("latitude", item.get("location", {}).get("latitude")), 0.0)
+        longitude = _to_number(item.get("longitude", item.get("location", {}).get("longitude")), 0.0)
+        if min_lat is not None and latitude < min_lat:
+            continue
+        if max_lat is not None and latitude > max_lat:
+            continue
+        if min_lng is not None and longitude < min_lng:
+            continue
+        if max_lng is not None and longitude > max_lng:
             continue
         filtered.append(item)
 
@@ -619,6 +657,10 @@ def list_vehicles(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     limit: int = Query(default=DEFAULT_LIMIT),
 ) -> Dict[str, Any]:
     normalized_limit = min(max(1, limit), MAX_LIMIT)
@@ -629,6 +671,10 @@ def list_vehicles(
         min_speed=min_speed,
         max_speed=max_speed,
         since_ms=since or None,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
         compact=False,
     )
 
@@ -643,6 +689,10 @@ def list_vehicles_light(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     limit: int = Query(default=DEFAULT_LIMIT),
 ) -> Dict[str, Any]:
     normalized_limit = min(max(1, limit), MAX_LIMIT)
@@ -653,6 +703,10 @@ def list_vehicles_light(
         min_speed=min_speed,
         max_speed=max_speed,
         since_ms=since or None,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
         compact=True,
         summary=True,
     )
@@ -673,6 +727,10 @@ def query_vehicles(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     compact: bool = Query(default=True),
     summary: bool = Query(default=True),
     limit: int = Query(default=DEFAULT_LIMIT),
@@ -687,6 +745,10 @@ def query_vehicles(
             city=city,
             min_speed=min_speed,
             max_speed=max_speed,
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lng=min_lng,
+            max_lng=max_lng,
         )
 
         return {
@@ -702,6 +764,10 @@ def query_vehicles(
         city=city,
         min_speed=min_speed,
         max_speed=max_speed,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
         compact=compact,
         summary=summary,
     )
@@ -722,6 +788,10 @@ def watch_vehicles(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     compact: bool = Query(default=True),
     summary: bool = Query(default=False),
     limit: int = Query(default=DEFAULT_LIMIT),
@@ -741,6 +811,10 @@ def watch_vehicles(
             city=city,
             min_speed=min_speed,
             max_speed=max_speed,
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lng=min_lng,
+            max_lng=max_lng,
         )
 
         return {
@@ -756,6 +830,10 @@ def watch_vehicles(
         city=city,
         min_speed=min_speed,
         max_speed=max_speed,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lng=min_lng,
+        max_lng=max_lng,
         compact=compact,
         summary=summary,
     )
@@ -925,6 +1003,10 @@ async def stream_vehicles(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     heartbeat_ms: int = Query(default=1000),
     max_updates: int = Query(default=1000),
 ):
@@ -937,6 +1019,10 @@ async def stream_vehicles(
             city=city,
             min_speed=min_speed,
             max_speed=max_speed,
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lng=min_lng,
+            max_lng=max_lng,
             compact=compact,
             summary=summary,
         )
@@ -969,6 +1055,10 @@ async def stream_vehicles(
                 city=city,
                 min_speed=min_speed,
                 max_speed=max_speed,
+                min_lat=min_lat,
+                max_lat=max_lat,
+                min_lng=min_lng,
+                max_lng=max_lng,
             )
 
             if filtered:
@@ -1009,6 +1099,10 @@ async def websocket_vehicles(
     vehicle_id: Optional[str] = Query(default=None),
     min_speed: Optional[float] = Query(default=None, alias="minSpeed"),
     max_speed: Optional[float] = Query(default=None, alias="maxSpeed"),
+    min_lat: Optional[float] = Query(default=None, alias="minLat"),
+    max_lat: Optional[float] = Query(default=None, alias="maxLat"),
+    min_lng: Optional[float] = Query(default=None, alias="minLng"),
+    max_lng: Optional[float] = Query(default=None, alias="maxLng"),
 ):
     await websocket.accept()
     current_since = max(0, since)
@@ -1021,6 +1115,10 @@ async def websocket_vehicles(
             city=city,
             min_speed=min_speed,
             max_speed=max_speed,
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lng=min_lng,
+            max_lng=max_lng,
         )
         await websocket.send_text(
             _safe_json_dumps(
@@ -1045,6 +1143,10 @@ async def websocket_vehicles(
                 city=city,
                 min_speed=min_speed,
                 max_speed=max_speed,
+                min_lat=min_lat,
+                max_lat=max_lat,
+                min_lng=min_lng,
+                max_lng=max_lng,
             )
             if updates:
                 await websocket.send_text(
