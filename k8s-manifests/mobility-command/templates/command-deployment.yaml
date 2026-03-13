@@ -31,11 +31,11 @@ spec:
             - containerPort: 8000
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "{{ .Values.command.api.hpa.requests.cpu }}"
+              memory: "{{ .Values.command.api.hpa.requests.memory }}"
             limits:
-              cpu: "500m"
-              memory: "256Mi"
+              cpu: "{{ .Values.command.api.hpa.limits.cpu }}"
+              memory: "{{ .Values.command.api.hpa.limits.memory }}"
           envFrom:
             - configMapRef:
                 name: mobility-config
@@ -127,11 +127,11 @@ spec:
           imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: "150m"
-              memory: "128Mi"
+              cpu: "{{ .Values.command.consumer.hpa.requests.cpu }}"
+              memory: "{{ .Values.command.consumer.hpa.requests.memory }}"
             limits:
-              cpu: "600m"
-              memory: "256Mi"
+              cpu: "{{ .Values.command.consumer.hpa.limits.cpu }}"
+              memory: "{{ .Values.command.consumer.hpa.limits.memory }}"
           envFrom:
             - configMapRef:
                 name: mobility-config
