@@ -309,13 +309,15 @@ function App() {
             <div className="status">포커스 차량을 선택하세요.</div>
           ) : null}
         </div>
-        <VehicleMap
-          vehicles={mapVehicles}
-          focusedVehicleId={focusTracking ? focusedVehicleId : null}
-          showStatusOverlay={showStatusOverlay}
-          showSnapshotLabel={showSnapshotLabel}
-          onVehicleSelect={handleVehicleSelect}
-        />
+        <div className="map-surface">
+          <VehicleMap
+            vehicles={mapVehicles}
+            focusedVehicleId={focusTracking ? focusedVehicleId : null}
+            showStatusOverlay={showStatusOverlay}
+            showSnapshotLabel={showSnapshotLabel}
+            onVehicleSelect={handleVehicleSelect}
+          />
+        </div>
       </div>
     </div>
   )
