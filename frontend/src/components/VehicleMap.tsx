@@ -230,7 +230,7 @@ function FocusController({
     }
 
     map.stop()
-    map.setView([pos.latitude, pos.longitude], Math.max(map.getZoom(), 16), {
+    map.panTo([pos.latitude, pos.longitude], {
       animate: false,
     })
 
