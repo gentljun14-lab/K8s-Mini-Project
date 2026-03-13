@@ -3,6 +3,7 @@
   line-height: 1.5;
   font-weight: 400;
   color: #e5eefc;
+  background: #08111f;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,18 +17,35 @@
 html,
 body,
 #root {
+  width: 100%;
   min-width: 320px;
   min-height: 100%;
   margin: 0;
+  padding: 0;
+  background: #08111f !important;
 }
 
+html,
 body {
-  min-height: 100vh;
   overflow-x: hidden;
 }
 
-#root {
+body {
   width: 100%;
+  min-height: 100vh;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden;
+  background: #08111f !important;
+}
+
+#root {
+  display: block;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: #08111f !important;
 }
 
 button,
