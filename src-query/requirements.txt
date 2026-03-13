@@ -6,6 +6,7 @@ fastapi==0.133.0
 h11==0.16.0
 idna==3.11
 kafka-python==2.3.0
+websockets==15.0.1
 pydantic==2.12.5
 pydantic_core==2.41.5
 python-dotenv==1.2.1

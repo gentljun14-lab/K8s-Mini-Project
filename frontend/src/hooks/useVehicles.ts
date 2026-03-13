@@ -87,6 +87,21 @@ export function buildWebSocketUrl(path: string) {
   return `${protocol}//${window.location.host}${normalizedPath}`
 }
 
+function buildWebSocketCandidates(): string[] {
+  if (
+    QUERY_API_BASE.startsWith('http://') ||
+    QUERY_API_BASE.startsWith('https://') ||
+    QUERY_API_BASE.startsWith('//')
+  ) {
+    return [buildWebSocketUrl('/api/vehicles/ws')]
+  }
+
+  return [
+    buildWebSocketUrl('/ws/vehicles'),
+    buildWebSocketUrl('/api/vehicles/ws'),
+  ]
+}
+
 function parseNumber(value: unknown): number {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? Math.trunc(value) : 0
@@ -652,101 +667,135 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
 
     retryDelayRef.current = SSE_RETRY_MIN_MS
-    const basePath = (
-      QUERY_API_BASE.startsWith('http://') ||
-      QUERY_API_BASE.startsWith('https://') ||
-      QUERY_API_BASE.startsWith('//')
-    )
-      ? '/api/vehicles/ws'
-      : '/ws/vehicles'
-    const baseUrl = new URL(buildWebSocketUrl(basePath))
-    addFilters(baseUrl)
-    const params = baseUrl.searchParams
-    params.set('compact', useCompact ? '1' : '0')
-    params.set('summary', String(useCompact))
-    params.set('since', String(sinceRef.current))
+    const candidates = buildWebSocketCandidates()
 
-    const wsUrl = `${baseUrl.protocol}//${baseUrl.host}${baseUrl.pathname}?${params.toString()}`
-    let socket: WebSocket
-    try {
-      socket = new WebSocket(wsUrl)
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? `WebSocket 초기화 실패: ${error.message}`
-          : 'WebSocket 초기화에 실패했습니다.',
-      )
-      return
-    }
-    websocketRef.current = socket
-
-    socket.onopen = () => {
-      if (!isMountedRef.current) return
-      stopPolling()
-      markRealtimeMessage()
-      startRealtimeWatchdog('websocket')
-      setIsRealtimeConnected(true)
-      setError(null)
-      retryDelayRef.current = SSE_RETRY_MIN_MS
-    }
-
-    socket.onmessage = (event) => {
-      if (!isMountedRef.current) return
-      try {
-        const parsed = JSON.parse(event.data)
-        markRealtimeMessage()
-        if (typeof parsed?.stream_last_id !== 'undefined') {
-          sinceRef.current = Math.max(sinceRef.current, parseNumber(parsed.stream_last_id))
-        }
-        if (parsed?.type === 'subscribed' || parsed?.type === 'heartbeat') {
-          return
-        }
-        if (parsed?.type === 'error') {
-          setError(typeof parsed?.message === 'string' ? parsed.message : 'WebSocket 오류가 발생했습니다.')
-          return
-        }
-        if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
-          const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
-          setVehicles(normalized)
-          updateCursorFromVehicles(normalized)
-          setLastUpdated(new Date())
-          return
-        }
-
-        if (Array.isArray(parsed?.updates)) {
-          const updates = parseVehicles(parsed as VehicleDeltaResponse)
-          setVehicles((prev) => applyVehicles(prev, updates))
-          updateCursorFromVehicles(updates)
-          setLastUpdated(new Date())
-        }
-      } catch {
-        if (!isMountedRef.current) return
-        setError('잘못된 실시간 데이터 형식입니다.')
-      }
-    }
-
-    socket.onerror = () => {
-      if (!isMountedRef.current) return
-      setError('WebSocket 연결 중 오류가 발생했습니다.')
-    }
-
-    socket.onclose = () => {
-      closeRealtime()
+    const openSocket = (candidateIndex: number) => {
       if (!isMountedRef.current) {
         return
       }
 
-      if (allowPollingFallback && !intervalRef.current) {
-        startPolling()
+      const baseUrl = new URL(candidates[candidateIndex])
+      addFilters(baseUrl)
+      const params = baseUrl.searchParams
+      params.set('compact', useCompact ? '1' : '0')
+      params.set('summary', String(useCompact))
+      params.set('since', String(sinceRef.current))
+
+      const wsUrl = `${baseUrl.protocol}//${baseUrl.host}${baseUrl.pathname}?${params.toString()}`
+      let socket: WebSocket
+      let opened = false
+
+      try {
+        socket = new WebSocket(wsUrl)
+      } catch (error) {
+        if (candidateIndex + 1 < candidates.length) {
+          openSocket(candidateIndex + 1)
+          return
+        }
+
+        setError(
+          error instanceof Error
+            ? `WebSocket 초기화 실패: ${error.message}`
+            : 'WebSocket 초기화에 실패했습니다.',
+        )
+        return
       }
 
-      scheduleReconnect(() => {
+      websocketRef.current = socket
+
+      socket.onopen = () => {
+        if (!isMountedRef.current || websocketRef.current !== socket) return
+        opened = true
+        stopPolling()
+        markRealtimeMessage()
+        startRealtimeWatchdog('websocket')
+        setIsRealtimeConnected(true)
+        setError(null)
+        retryDelayRef.current = SSE_RETRY_MIN_MS
+      }
+
+      socket.onmessage = (event) => {
+        if (!isMountedRef.current || websocketRef.current !== socket) return
+        try {
+          const parsed = JSON.parse(event.data)
+          markRealtimeMessage()
+          if (typeof parsed?.stream_last_id !== 'undefined') {
+            sinceRef.current = Math.max(sinceRef.current, parseNumber(parsed.stream_last_id))
+          }
+          if (parsed?.type === 'subscribed' || parsed?.type === 'heartbeat') {
+            return
+          }
+          if (parsed?.type === 'error') {
+            setError(typeof parsed?.message === 'string' ? parsed.message : 'WebSocket 오류가 발생했습니다.')
+            return
+          }
+          if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
+            const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
+            setVehicles(normalized)
+            updateCursorFromVehicles(normalized)
+            setLastUpdated(new Date())
+            return
+          }
+
+          if (Array.isArray(parsed?.updates)) {
+            const updates = parseVehicles(parsed as VehicleDeltaResponse)
+            setVehicles((prev) => applyVehicles(prev, updates))
+            updateCursorFromVehicles(updates)
+            setLastUpdated(new Date())
+          }
+        } catch {
+          if (!isMountedRef.current || websocketRef.current !== socket) return
+          setError('잘못된 실시간 데이터 형식입니다.')
+        }
+      }
+
+      socket.onerror = () => {
+        if (!isMountedRef.current || websocketRef.current !== socket) return
+
+        if (!opened && candidateIndex + 1 < candidates.length) {
+          websocketRef.current = null
+          try {
+            socket.close()
+          } catch {
+            // ignore close errors while falling back to next candidate
+          }
+          openSocket(candidateIndex + 1)
+          return
+        }
+
+        setError(`WebSocket 연결 중 오류가 발생했습니다. (${wsUrl})`)
+      }
+
+      socket.onclose = () => {
+        if (websocketRef.current !== socket) {
+          return
+        }
+
+        if (!opened && candidateIndex + 1 < candidates.length) {
+          websocketRef.current = null
+          openSocket(candidateIndex + 1)
+          return
+        }
+
+        closeRealtime()
         if (!isMountedRef.current) {
           return
         }
-        connectWebSocket()
-      }, SSE_RETRY_MIN_MS)
+
+        if (allowPollingFallback && !intervalRef.current) {
+          startPolling()
+        }
+
+        scheduleReconnect(() => {
+          if (!isMountedRef.current) {
+            return
+          }
+          connectWebSocket()
+        }, SSE_RETRY_MIN_MS)
+      }
     }
+
+    openSocket(0)
   }
 
   function startPolling() {
