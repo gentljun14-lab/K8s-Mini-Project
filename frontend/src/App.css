@@ -406,7 +406,7 @@ body,
 
 .search-input-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px) auto;
   gap: 10px;
   align-items: center;
 }

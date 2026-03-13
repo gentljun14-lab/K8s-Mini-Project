@@ -332,6 +332,19 @@ function App() {
                 placeholder="차량 ID 검색"
                 disabled={!focusTracking}
               />
+              <select
+                value={focusedVehicleId ?? ''}
+                onChange={(event) => handleFocusVehicleChange(event.target.value)}
+                disabled={!focusTracking || vehicleOptions.length === 0}
+                aria-label="차량 ID 전체 목록"
+              >
+                <option value="">전체 차량 목록</option>
+                {vehicleOptions.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 className="ghost-button"
