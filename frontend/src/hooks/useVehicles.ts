@@ -691,26 +691,35 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     const controller = new AbortController()
     requestControllerRef.current = controller
 
-      const init = async () => {
+    const init = async () => {
+      const shouldUsePollingOnly = !enableSSE
+      const shouldPrefetchSnapshot = !enableSSE || allowPollingFallback
+
+      if (shouldPrefetchSnapshot) {
         try {
           const snapshot = await fetchDelta(controller.signal)
-        if (!isMountedRef.current || controller.signal.aborted) {
-          return
-        }
-        setVehicles(snapshot)
-        setError(null)
-        setLastUpdated(new Date())
-      } catch (e) {
-        if (isMountedRef.current && !controller.signal.aborted) {
-          setError(e instanceof Error ? e.message : 'API 요청 실패')
-        }
-      } finally {
-        if (isMountedRef.current && !controller.signal.aborted) {
-          setLoading(false)
+          if (!isMountedRef.current || controller.signal.aborted) {
+            return
+          }
+          setVehicles(snapshot)
+          setError(null)
+          setLastUpdated(new Date())
+        } catch (e) {
+          if (isMountedRef.current && !controller.signal.aborted) {
+            setError(e instanceof Error ? e.message : 'API 요청 실패')
+          }
+        } finally {
+          if (isMountedRef.current && !controller.signal.aborted) {
+            setLoading(false)
+          }
         }
       }
 
       if (enableSSE) {
+        if (!shouldPrefetchSnapshot && isMountedRef.current && !controller.signal.aborted) {
+          setLoading(false)
+        }
+
         if (useWebSocket) {
           connectWebSocket()
           if (allowPollingFallback && !websocketRef.current) {
@@ -722,14 +731,14 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
             startPolling()
           }
         }
-      } else {
+      } else if (shouldUsePollingOnly) {
         startPolling()
       }
     }
 
     init()
 
-  return () => {
+    return () => {
       isMountedRef.current = false
       isPollingRef.current = false
       sseFailureCountRef.current = 0

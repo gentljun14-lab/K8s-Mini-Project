@@ -172,12 +172,15 @@ function createPinClass(selected: boolean, state: string): L.DivIcon {
     return cached
   }
 
-  const color = selected ? '#2f8cff' : getStateColor(state)
+  const color = getStateColor(state)
+  const size = selected ? 18 : 16
+  const dotSize = selected ? 14 : 12
+  const border = selected ? 4 : 3
   const icon = L.divIcon({
     className: '',
-    html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.45)"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
+    html: `<div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${color};border:${border}px solid white;box-shadow:0 0 6px rgba(0,0,0,0.45), 0 0 0 ${selected ? 4 : 0}px rgba(47,140,255,0.22)"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   })
   ICON_CACHE.set(key, icon)
   return icon
