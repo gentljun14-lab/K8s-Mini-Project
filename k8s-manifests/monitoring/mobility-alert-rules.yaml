@@ -1,0 +1,67 @@
+﻿apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mobility-app-alert-rules
+  namespace: monitoring
+  labels:
+    release: mobility
+    app.kubernetes.io/name: kube-prometheus-stack
+spec:
+  groups:
+    - name: mobility-pod-health
+      interval: 30s
+      rules:
+        - alert: MiniprojectPodNotReady
+          expr: |
+            kube_pod_status_ready{namespace="miniproject", condition="true"} == 0
+          for: 2m
+          labels:
+            severity: warning
+            namespace: miniproject
+          annotations:
+            summary: "Pod Ready false (miniproject)"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} pod is not ready for 2 minutes."
+
+        - alert: MiniprojectPodNotRunning
+          expr: |
+            kube_pod_status_phase{namespace="miniproject", phase="Running"} == 0
+          for: 3m
+          labels:
+            severity: warning
+            namespace: miniproject
+          annotations:
+            summary: "Pod Running state is down (miniproject)"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} pod is not in Running state for 3 minutes."
+
+        - alert: MiniprojectPodHighCPUUsage
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{namespace="miniproject",container!="",pod!=""}[5m])) by (pod,container) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            namespace: miniproject
+          annotations:
+            summary: "Pod CPU usage is high"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) has 5m avg CPU > 0.8 cores."
+
+        - alert: MiniprojectPodHighMemoryUsage
+          expr: |
+            sum(container_memory_working_set_bytes{namespace="miniproject",container!="",pod!=""}) by (pod,container) / 1024 / 1024 > 700
+          for: 5m
+          labels:
+            severity: warning
+            namespace: miniproject
+          annotations:
+            summary: "Pod memory usage is high"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) memory usage is over 700MB for 5m."
+
+        - alert: MiniprojectPodRestartingTooOften
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="miniproject",container!="",pod!=""}[15m]) > 3
+          for: 5m
+          labels:
+            severity: critical
+            namespace: miniproject
+          annotations:
+            summary: "Pod is restarting too often"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) restarted more than 3 times within 15 minutes."

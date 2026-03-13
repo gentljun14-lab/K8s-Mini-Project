@@ -1,0 +1,32 @@
+﻿grafana:
+  grafana.ini:
+    server:
+      root_url: "http://192.168.202.243:50031/grafana/"
+      serve_from_sub_path: true
+
+prometheus:
+  prometheusSpec:
+    externalUrl: "http://192.168.202.243:50031/prometheus"
+    routePrefix: "/prometheus"
+
+alertmanager:
+  alertmanagerSpec:
+    externalUrl: "http://192.168.202.243:50031/alertmanager"
+    routePrefix: "/alertmanager"
+    config:
+      global:
+        resolve_timeout: 5m
+      route:
+        group_by:
+          - alertname
+          - namespace
+          - pod
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: discord
+      receivers:
+        - name: discord
+          webhook_configs:
+            - url: "https://discord.com/api/webhooks/1481186875728330823/NmF9TNZT_Qm8gOxLozYUt0a2CpNPPcKM0eOfwVjuY2MdBm-TxydtXRuRU-uYJ0xGhy3d"
+              send_resolved: true

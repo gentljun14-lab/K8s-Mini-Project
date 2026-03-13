@@ -208,6 +208,14 @@ def _coerce_float(value: Any, default: float) -> float:
 def _coerce_str(value: Any, default: str) -> str:
     return value if isinstance(value, str) and value else default
 
+
+def _coerce_vehicle_metadata(raw: Dict[str, Any], key: str, fallback_values: Tuple[str, ...], default_index: int) -> str:
+    value = raw.get(key)
+    normalized = _coerce_str(value, "")
+    if normalized:
+        return normalized
+    return fallback_values[default_index % len(fallback_values)]
+
 DUMMY_DATA: Dict[str, Any] = _load_dummy_data()
 VEHICLE_MODELS: Tuple[str, ...] = tuple(DUMMY_DATA.get("vehicle_models", [])) or (
     "Hyundai IONIQ 5",
@@ -333,8 +341,8 @@ def generate_vehicle_seeds() -> List[VehicleState]:
                 VehicleState(
                     vehicle_id=_coerce_str(raw.get("vehicle_id"), f"CAR-{1000 + len(seeds) + 1}"),
                     vin=_coerce_str(raw.get("vin"), f"KICF9AA{100000000 + len(seeds) + 1:09d}"),
-                    model=_coerce_str(raw.get("model"), random.choice(VEHICLE_MODELS)),
-                    driver=_coerce_str(raw.get("driver"), DRIVERS[len(seeds) % len(DRIVERS)]),
+                    model=_coerce_vehicle_metadata(raw, "model", VEHICLE_MODELS, len(seeds)),
+                    driver=_coerce_vehicle_metadata(raw, "driver", DRIVERS, len(seeds)),
                     city=city_name,
                     latitude=lat,
                     longitude=lon,
@@ -539,6 +547,8 @@ def build_payload(vehicle: VehicleState, events: List[str]) -> Dict[str, Any]:
             "driver": vehicle.driver,
             "timestamp_utc": ts
         },
+        "model": vehicle.model,
+        "driver": vehicle.driver,
         "location": {
             "city": vehicle.city,
             "coordinates": {
@@ -688,8 +698,8 @@ def list_vehicles():
                 {
             "vehicle_id": vehicle_id,
             "vin": latest.get("vehicle", {}).get("vin"),
-            "model": latest.get("vehicle", {}).get("model"),
-            "driver": latest.get("vehicle", {}).get("driver"),
+            "model": latest.get("vehicle", {}).get("model") or latest.get("model"),
+            "driver": latest.get("vehicle", {}).get("driver") or latest.get("driver"),
             "timestamp": latest.get("vehicle", {}).get("timestamp_utc"),
             "trip_state": latest.get("trip", {}).get("state"),
             "speed_kmh": latest.get("trip", {}).get("speed_kmh"),

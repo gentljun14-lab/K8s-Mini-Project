@@ -13,6 +13,7 @@ function App() {
   const [showStatusOverlay, setShowStatusOverlay] = useState(true)
   const [showSnapshotLabel, setShowSnapshotLabel] = useState(false)
   const [focusTracking, setFocusTracking] = useState(true)
+  const [controlsExpanded, setControlsExpanded] = useState(false)
   const [focusedVehicleId, setFocusedVehicleId] = useState<string | null>(null)
   const [focusSearchText, setFocusSearchText] = useState('')
   const [replayMode, setReplayMode] = useState(false)
@@ -146,103 +147,168 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <h1>Connected Car Dashboard</h1>
-      </header>
-      <div className="control-panel">
-        <label>
-          <input
-            type="checkbox"
-            checked={showStatusOverlay}
-            onChange={(event) => setShowStatusOverlay(event.target.checked)}
-          />
-          실시간 상태 오버레이
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={showSnapshotLabel}
-            onChange={(event) => setShowSnapshotLabel(event.target.checked)}
-          />
-          스냅샷 라벨 표시
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={focusTracking}
-            onChange={(event) => {
-              setFocusTracking(event.target.checked)
-            }}
-          />
-          포커스 차량 트래킹 모드
-        </label>
-        <label>
-          포커스 차량 ID:
-          <input
-            type="text"
-            value={focusSearchText}
-            onChange={(event) => handleFocusVehicleChange(event.target.value)}
-            list="vehicleIds"
-            placeholder="차량 ID 검색"
-            disabled={!focusTracking}
-          />
-          <datalist id="vehicleIds">
-            {vehicleOptions.map((id) => (
-              <option key={id} value={id} />
-            ))}
-          </datalist>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={replayMode}
-            onChange={(event) => {
-              setReplayMode(event.target.checked)
-              if (!event.target.checked) {
-                setReplayPlay(true)
-              }
-            }}
-          />
-          재생 모드
-        </label>
+        <div className="header-copy">
+          <p className="eyebrow">Mobility Control Center</p>
+          <h1>Connected Car Dashboard</h1>
+        </div>
+        <div className="header-badge">
+          <span className={`live-dot ${isRealtimeConnected && !replayMode ? 'online' : 'offline'}`} />
+          {replayMode ? 'Replay Session' : isRealtimeConnected ? 'Live Stream' : 'Polling Mode'}
+        </div>
         <button
           type="button"
-          className="replay-control"
-          onClick={() => setReplayPlay((prev) => !prev)}
-          disabled={!replayMode || frameHistory.length <= 1}
+          className="panel-toggle-button"
+          onClick={() => setControlsExpanded((prev) => !prev)}
+          aria-expanded={controlsExpanded}
+          aria-controls="dashboard-controls"
         >
-          {replayPlay ? '재생 일시정지' : '재생 시작'}
+          {controlsExpanded ? '옵션 숨기기' : '옵션 보기'}
         </button>
-        <label>
-          속도:
-          <select
-            value={replaySpeed}
-            onChange={(event) => setReplaySpeed(Number(event.target.value))}
-            disabled={!replayMode}
-          >
-            <option value={1}>1x</option>
-            <option value={2}>2x</option>
-            <option value={4}>4x</option>
-            <option value={8}>8x</option>
-          </select>
-        </label>
-        <label>
-          프레임:
-          <input
-            type="range"
-            min={0}
-            max={Math.max(0, frameHistory.length - 1)}
-            value={Math.min(replayIndex, Math.max(0, frameHistory.length - 1))}
-            onChange={(event) => setReplayIndex(Number(event.target.value))}
-            disabled={!replayMode || frameHistory.length <= 1}
-          />
-        </label>
+      </header>
+      <div
+        id="dashboard-controls"
+        className={`control-panel ${controlsExpanded ? 'expanded' : 'collapsed'}`}
+      >
+        <section className="panel-section toggle-grid">
+          <div className="section-copy">
+            <p className="section-label">Visibility</p>
+            <h2>지도 표시 옵션</h2>
+          </div>
+          <label className="toggle-card">
+            <input
+              type="checkbox"
+              checked={showStatusOverlay}
+              onChange={(event) => setShowStatusOverlay(event.target.checked)}
+            />
+            <span className="toggle-switch" aria-hidden="true" />
+            <span className="toggle-content">
+              <strong>실시간 상태 오버레이</strong>
+              <small>속도, 배터리, 상태 정보를 지도에서 바로 확인합니다.</small>
+            </span>
+          </label>
+          <label className="toggle-card">
+            <input
+              type="checkbox"
+              checked={showSnapshotLabel}
+              onChange={(event) => setShowSnapshotLabel(event.target.checked)}
+            />
+            <span className="toggle-switch" aria-hidden="true" />
+            <span className="toggle-content">
+              <strong>스냅샷 라벨 표시</strong>
+              <small>차량 모델과 드라이버 정보를 툴팁에 함께 보여줍니다.</small>
+            </span>
+          </label>
+          <label className="toggle-card">
+            <input
+              type="checkbox"
+              checked={focusTracking}
+              onChange={(event) => {
+                setFocusTracking(event.target.checked)
+              }}
+            />
+            <span className="toggle-switch" aria-hidden="true" />
+            <span className="toggle-content">
+              <strong>포커스 차량 트래킹 모드</strong>
+              <small>선택한 차량을 따라가며 지도를 자동으로 이동합니다.</small>
+            </span>
+          </label>
+        </section>
+
+        <section className="panel-section search-section">
+          <div className="section-copy">
+            <p className="section-label">Focus</p>
+            <h2>포커스 차량 선택</h2>
+          </div>
+          <label className="field-card">
+            <span className="field-label">Vehicle ID</span>
+            <input
+              type="text"
+              value={focusSearchText}
+              onChange={(event) => handleFocusVehicleChange(event.target.value)}
+              list="vehicleIds"
+              placeholder="차량 ID 검색"
+              disabled={!focusTracking}
+            />
+            <datalist id="vehicleIds">
+              {vehicleOptions.map((id) => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
+            <small>{focusTracking ? '입력한 차량을 기준으로 지도 포커스를 맞춥니다.' : '트래킹 모드를 켜면 선택할 수 있습니다.'}</small>
+          </label>
+        </section>
+
+        <section className="panel-section replay-section">
+          <div className="section-copy">
+            <p className="section-label">Replay</p>
+            <h2>주행 기록 재생</h2>
+          </div>
+          <label className="toggle-card replay-toggle">
+            <input
+              type="checkbox"
+              checked={replayMode}
+              onChange={(event) => {
+                setReplayMode(event.target.checked)
+                if (!event.target.checked) {
+                  setReplayPlay(true)
+                }
+              }}
+            />
+            <span className="toggle-switch" aria-hidden="true" />
+            <span className="toggle-content">
+              <strong>재생 모드</strong>
+              <small>최근 프레임 히스토리를 시간순으로 다시 살펴봅니다.</small>
+            </span>
+          </label>
+          <div className="replay-controls">
+            <button
+              type="button"
+              className="replay-control"
+              onClick={() => setReplayPlay((prev) => !prev)}
+              disabled={!replayMode || frameHistory.length <= 1}
+            >
+              {replayPlay ? '재생 일시정지' : '재생 시작'}
+            </button>
+            <label className="field-card compact">
+              <span className="field-label">속도</span>
+              <select
+                value={replaySpeed}
+                onChange={(event) => setReplaySpeed(Number(event.target.value))}
+                disabled={!replayMode}
+              >
+                <option value={1}>1x</option>
+                <option value={2}>2x</option>
+                <option value={4}>4x</option>
+                <option value={8}>8x</option>
+              </select>
+            </label>
+          </div>
+          <label className="field-card slider-card">
+            <div className="slider-header">
+              <span className="field-label">프레임</span>
+              <strong>
+                {Math.min(replayIndex, Math.max(0, frameHistory.length - 1))} / {Math.max(0, frameHistory.length - 1)}
+              </strong>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, frameHistory.length - 1)}
+              value={Math.min(replayIndex, Math.max(0, frameHistory.length - 1))}
+              onChange={(event) => setReplayIndex(Number(event.target.value))}
+              disabled={!replayMode || frameHistory.length <= 1}
+            />
+          </label>
+        </section>
       </div>
       <div className="map-wrapper">
-        <div className="status">{mapSourceText}</div>
-        {lastUpdated && !error ? <div className="status">마지막 업데이트: {lastUpdated.toLocaleTimeString()}</div> : null}
-        {focusTracking && !focusedVehicleId ? (
-          <div className="status">포커스 차량을 선택하세요.</div>
-        ) : null}
+        <div className="status-stack">
+          <div className="status">{mapSourceText}</div>
+          {lastUpdated && !error ? <div className="status">마지막 업데이트: {lastUpdated.toLocaleTimeString()}</div> : null}
+          {focusTracking && !focusedVehicleId ? (
+            <div className="status">포커스 차량을 선택하세요.</div>
+          ) : null}
+        </div>
         <VehicleMap
           vehicles={mapVehicles}
           focusedVehicleId={focusTracking ? focusedVehicleId : null}
