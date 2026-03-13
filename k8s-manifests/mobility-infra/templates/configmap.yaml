@@ -28,6 +28,7 @@ data:
   REDIS_TTL_SEC: "60"
   REDIS_KEY_PATTERN: "vehicle:*:latest"
   REDIS_ACTIVE_IDS_KEY: "vehicle:active_ids"
+  REDIS_ACTIVE_IDS_LEX_KEY: "vehicle:active_ids:lex"
   REDIS_ACTIVE_WINDOW_MS: "120000"
 
   # --- API Ports ---

@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import VehicleMap from './components/VehicleMap'
 import { buildApiUrl, parseReplayFrames, useVehicles } from './hooks/useVehicles'
-import type { Vehicle, VehicleIdsResponse } from './types/vehicle'
+import type { Vehicle, VehicleSearchResponse } from './types/vehicle'
 import './App.css'
 
 function App() {
@@ -27,8 +27,11 @@ function App() {
   const [replayPlay, setReplayPlay] = useState(true)
   const [replayLoading, setReplayLoading] = useState(false)
   const [replayError, setReplayError] = useState<string | null>(null)
-  const [allVehicleIds, setAllVehicleIds] = useState<string[]>([])
+  const [vehicleSearchResults, setVehicleSearchResults] = useState<string[]>([])
   const [totalVehicleCount, setTotalVehicleCount] = useState(0)
+  const [focusSearchLoading, setFocusSearchLoading] = useState(false)
+  const [focusResolveLoading, setFocusResolveLoading] = useState(false)
+  const [focusSearchError, setFocusSearchError] = useState<string | null>(null)
 
   const { vehicles, loading, error, lastUpdated, isRealtimeConnected } = useVehicles(1000, {
     enableSSE: transportMode !== 'polling',
@@ -49,11 +52,25 @@ function App() {
   })
 
   useEffect(() => {
-    let cancelled = false
+    if (!focusTracking) {
+      setVehicleSearchResults([])
+      setFocusSearchLoading(false)
+      setFocusSearchError(null)
+      return
+    }
 
-    const loadVehicleIds = async () => {
+    const controller = new AbortController()
+    const query = focusSearchText.trim()
+    const timer = window.setTimeout(async () => {
+      setFocusSearchLoading(true)
+
       try {
-        const response = await fetch(buildApiUrl('/api/vehicles/ids'), {
+        const url = new URL(buildApiUrl('/api/vehicles/search'), window.location.origin)
+        url.searchParams.set('q', query)
+        url.searchParams.set('limit', query ? '20' : '0')
+
+        const response = await fetch(url.toString(), {
+          signal: controller.signal,
           headers: { 'Cache-Control': 'no-cache' },
         })
 
@@ -61,47 +78,39 @@ function App() {
           throw new Error(`HTTP ${response.status}`)
         }
 
-        const payload = await response.json() as VehicleIdsResponse
+        const payload = await response.json() as VehicleSearchResponse
         const ids = Array.isArray(payload.vehicle_ids)
           ? [...payload.vehicle_ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
           : []
 
-        if (!cancelled) {
-          setAllVehicleIds(ids)
-          setTotalVehicleCount(typeof payload.count === 'number' ? payload.count : ids.length)
+        if (controller.signal.aborted) {
+          return
         }
-      } catch {
-        if (!cancelled) {
-          setAllVehicleIds([])
-          setTotalVehicleCount(0)
+
+        setVehicleSearchResults(ids)
+        setTotalVehicleCount(typeof payload.total_count === 'number' ? payload.total_count : ids.length)
+        setFocusSearchError(null)
+      } catch (searchError) {
+        if (controller.signal.aborted) {
+          return
+        }
+
+        setVehicleSearchResults([])
+        setFocusSearchError(searchError instanceof Error ? searchError.message : '차량 검색에 실패했습니다.')
+      } finally {
+        if (!controller.signal.aborted) {
+          setFocusSearchLoading(false)
         }
       }
-    }
-
-    void loadVehicleIds()
-    const timer = window.setInterval(() => {
-      void loadVehicleIds()
-    }, 15000)
+    }, query ? 250 : 0)
 
     return () => {
-      cancelled = true
-      window.clearInterval(timer)
+      controller.abort()
+      window.clearTimeout(timer)
     }
-  }, [])
+  }, [focusSearchText, focusTracking])
 
-  useEffect(() => {
-    if (!focusTracking) {
-      return
-    }
-
-    if (!focusedVehicleId && allVehicleIds.length > 0) {
-      setFocusedVehicleId(allVehicleIds[0])
-    }
-  }, [allVehicleIds, focusTracking, focusedVehicleId])
-
-  const vehicleOptions = useMemo(() => {
-    return allVehicleIds
-  }, [allVehicleIds])
+  const vehicleOptions = useMemo(() => vehicleSearchResults, [vehicleSearchResults])
 
   useEffect(() => {
     if (!focusSearchText && focusedVehicleId) {
@@ -113,23 +122,49 @@ function App() {
     if (!focusTracking) {
       setFocusedVehicleId(null)
       setFocusSearchText('')
+      setFocusSearchError(null)
     }
   }, [focusTracking])
 
-  const handleFocusVehicleChange = useCallback((value: string) => {
+  const resolveAndFocusVehicle = useCallback(async (value: string) => {
     const next = value.trim()
     if (!next) {
       setFocusedVehicleId(null)
+      setFocusSearchText('')
+      setFocusSearchError(null)
       return
     }
 
-    if (vehicleOptions.includes(next)) {
+    setFocusResolveLoading(true)
+    try {
+      const response = await fetch(buildApiUrl(`/api/vehicles/${encodeURIComponent(next)}`), {
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('현재 활성 차량 목록에서 찾을 수 없습니다.')
+        }
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      setFocusTracking(true)
       setFocusedVehicleId(next)
       setFocusSearchText(next)
-    } else {
-      setFocusSearchText(next)
+      setFocusSearchError(null)
+    } catch (focusError) {
+      setFocusSearchError(focusError instanceof Error ? focusError.message : '차량 포커싱에 실패했습니다.')
+    } finally {
+      setFocusResolveLoading(false)
     }
-  }, [vehicleOptions])
+  }, [])
+
+  const handleFocusVehicleChange = useCallback((value: string) => {
+    setFocusSearchText(value)
+    if (!value.trim()) {
+      setFocusSearchError(null)
+    }
+  }, [])
 
   useEffect(() => {
     if (!replayMode) {
@@ -425,17 +460,25 @@ function App() {
                 type="text"
                 value={focusSearchText}
                 onChange={(event) => handleFocusVehicleChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void resolveAndFocusVehicle(focusSearchText)
+                  }
+                }}
                 list="vehicleIds"
                 placeholder="차량 ID 검색"
                 disabled={!focusTracking}
               />
               <select
-                value={focusedVehicleId ?? ''}
-                onChange={(event) => handleFocusVehicleChange(event.target.value)}
+                value=""
+                onChange={(event) => {
+                  void resolveAndFocusVehicle(event.target.value)
+                }}
                 disabled={!focusTracking || vehicleOptions.length === 0}
-                aria-label="차량 ID 전체 목록"
+                aria-label="차량 ID 검색 결과"
               >
-                <option value="">전체 차량 목록</option>
+                <option value="">{focusSearchLoading ? '검색 중...' : '검색 결과'}</option>
                 {vehicleOptions.map((id) => (
                   <option key={id} value={id}>
                     {id}
@@ -448,10 +491,11 @@ function App() {
                 onClick={() => {
                   setFocusedVehicleId(null)
                   setFocusSearchText('')
+                  setFocusSearchError(null)
                 }}
-                disabled={!focusTracking || (!focusSearchText && !focusedVehicleId)}
+                disabled={!focusTracking || focusResolveLoading || (!focusSearchText && !focusedVehicleId)}
               >
-                초기화
+                {focusResolveLoading ? '확인 중' : '초기화'}
               </button>
             </div>
             <datalist id="vehicleIds">
@@ -459,7 +503,13 @@ function App() {
                 <option key={id} value={id} />
               ))}
             </datalist>
-            <small>{focusTracking ? `입력한 차량을 기준으로 지도 포커스를 맞춥니다.${focusedVehicle ? ` 현재 선택: ${focusedVehicle.vehicle_id}` : ''}` : '트래킹 모드를 켜면 선택할 수 있습니다.'}</small>
+            <small className={focusSearchError ? 'field-error' : undefined}>
+              {focusTracking
+                ? focusSearchError
+                  ? focusSearchError
+                  : `${focusSearchLoading ? '차량 ID 후보를 찾는 중입니다.' : `활성 차량 ${totalVehicleCount}대 기준으로 검색합니다.${vehicleOptions.length > 0 ? ` 현재 후보 ${vehicleOptions.length}개` : ''}`} ${focusedVehicle ? `현재 선택: ${focusedVehicle.vehicle_id}` : '검색 후 Enter 또는 결과 선택으로 포커싱합니다.'}`
+                : '트래킹 모드를 켜면 선택할 수 있습니다.'}
+            </small>
           </label>
         </section>
 

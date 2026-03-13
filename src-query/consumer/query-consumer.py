@@ -168,6 +168,7 @@ def start_consumer():
   update_stream = os.getenv("VEHICLE_UPDATE_STREAM", "vehicle:updates")
   stream_maxlen = int(os.getenv("VEHICLE_UPDATE_STREAM_MAXLEN", "5000"))
   active_ids_key = os.getenv("REDIS_ACTIVE_IDS_KEY", "vehicle:active_ids")
+  active_ids_lex_key = os.getenv("REDIS_ACTIVE_IDS_LEX_KEY", "vehicle:active_ids:lex")
 
   consumer = None
 
@@ -222,6 +223,7 @@ def start_consumer():
 
             redis_client.set(key, json.dumps(latest_payload), ex=ttl_sec)
             redis_client.zadd(active_ids_key, {vehicle_id: cursor_ts})
+            redis_client.zadd(active_ids_lex_key, {vehicle_id: 0})
 
             snapshot = _build_snapshot(latest_payload)
             if snapshot.get("vehicle_id"):

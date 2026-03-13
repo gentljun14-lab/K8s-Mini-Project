@@ -18,6 +18,7 @@ app = FastAPI(title="Connected Car Query API")
 
 REDIS_KEY_PATTERN = os.getenv("REDIS_KEY_PATTERN", "vehicle:*:latest")
 REDIS_ACTIVE_IDS_KEY = os.getenv("REDIS_ACTIVE_IDS_KEY", "vehicle:active_ids")
+REDIS_ACTIVE_IDS_LEX_KEY = os.getenv("REDIS_ACTIVE_IDS_LEX_KEY", "vehicle:active_ids:lex")
 REDIS_ACTIVE_WINDOW_MS = int(os.getenv("REDIS_ACTIVE_WINDOW_MS", "120000"))
 VEHICLE_UPDATE_STREAM = os.getenv("VEHICLE_UPDATE_STREAM", "vehicle:updates")
 VEHICLE_UPDATE_BATCH = int(os.getenv("VEHICLE_UPDATE_BATCH", "500"))
@@ -161,12 +162,27 @@ def _extract_stream_cursor(fields: Dict[str, Any]) -> int:
     return _to_int(fields.get("event_ts"))
 
 
-def _iter_active_vehicle_ids() -> Iterable[str]:
+def _prune_inactive_vehicle_ids() -> int:
     cutoff_ms = max(0, int(time.time() * 1000) - REDIS_ACTIVE_WINDOW_MS)
-    seen: set[str] = set()
 
     try:
-        redis_client.zremrangebyscore(REDIS_ACTIVE_IDS_KEY, 0, cutoff_ms)
+        stale_ids = redis_client.zrangebyscore(REDIS_ACTIVE_IDS_KEY, 0, cutoff_ms)
+        if stale_ids:
+            redis_client.zrem(REDIS_ACTIVE_IDS_KEY, *stale_ids)
+            try:
+                redis_client.zrem(REDIS_ACTIVE_IDS_LEX_KEY, *stale_ids)
+            except Exception:
+                pass
+        return _to_int(redis_client.zcard(REDIS_ACTIVE_IDS_KEY))
+    except Exception:
+        return 0
+
+
+def _iter_active_vehicle_ids() -> Iterable[str]:
+    seen: set[str] = set()
+
+    _prune_inactive_vehicle_ids()
+    try:
         members = redis_client.zrange(REDIS_ACTIVE_IDS_KEY, 0, -1)
     except Exception:
         members = []
@@ -529,6 +545,57 @@ def _latest_payloads() -> Iterable[Dict[str, Any]]:
         yield payload
 
 
+def _search_vehicle_ids(query_text: str, limit: int) -> Tuple[List[str], int]:
+    normalized_limit = min(max(0, limit), 100)
+    total_count = _prune_inactive_vehicle_ids()
+    query_text = query_text.strip()
+
+    if not query_text or normalized_limit == 0:
+        return [], total_count
+
+    matches: List[str] = []
+    seen: set[str] = set()
+    upper_query = query_text.upper()
+
+    try:
+        lex_matches = redis_client.zrangebylex(
+            REDIS_ACTIVE_IDS_LEX_KEY,
+            f"[{query_text}",
+            f"[{query_text}\xff",
+            start=0,
+            num=max(normalized_limit * 3, normalized_limit),
+        )
+    except Exception:
+        lex_matches = []
+
+    for vehicle_id in lex_matches:
+        normalized_vehicle_id = _coerce_str(vehicle_id).strip()
+        if not normalized_vehicle_id or normalized_vehicle_id in seen:
+            continue
+        if redis_client.zscore(REDIS_ACTIVE_IDS_KEY, normalized_vehicle_id) is None:
+            continue
+        matches.append(normalized_vehicle_id)
+        seen.add(normalized_vehicle_id)
+        if len(matches) >= normalized_limit:
+            return matches, total_count
+
+    if matches:
+        return matches, total_count
+
+    for vehicle_id in _iter_active_vehicle_ids():
+        normalized_vehicle_id = _coerce_str(vehicle_id).strip()
+        if not normalized_vehicle_id or normalized_vehicle_id in seen:
+            continue
+        if upper_query not in normalized_vehicle_id.upper():
+            continue
+        matches.append(normalized_vehicle_id)
+        seen.add(normalized_vehicle_id)
+        if len(matches) >= normalized_limit:
+            break
+
+    return matches, total_count
+
+
 def _collect_vehicles_from_latest(
     *,
     vehicle_id: Optional[str] = None,
@@ -763,6 +830,22 @@ def list_vehicle_ids() -> Dict[str, Any]:
     return {
         "count": len(ids),
         "vehicle_ids": ids,
+        "stream_last_id": _latest_stream_id(),
+    }
+
+
+@app.get("/api/vehicles/search")
+def search_vehicle_ids(
+    q: str = Query(default="", alias="q"),
+    limit: int = Query(default=20, ge=0, le=100),
+) -> Dict[str, Any]:
+    matches, total_count = _search_vehicle_ids(q, limit)
+
+    return {
+        "query": q,
+        "count": len(matches),
+        "total_count": total_count,
+        "vehicle_ids": matches,
         "stream_last_id": _latest_stream_id(),
     }
 

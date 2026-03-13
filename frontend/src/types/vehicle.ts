@@ -123,3 +123,11 @@ export interface VehicleIdsResponse {
   vehicle_ids: string[]
   stream_last_id?: number
 }
+
+export interface VehicleSearchResponse {
+  query: string
+  count: number
+  total_count: number
+  vehicle_ids: string[]
+  stream_last_id?: number
+}

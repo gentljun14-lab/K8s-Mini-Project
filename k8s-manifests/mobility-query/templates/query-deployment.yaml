@@ -67,6 +67,11 @@ spec:
                 configMapKeyRef:
                   name: mobility-config
                   key: REDIS_ACTIVE_IDS_KEY
+            - name: REDIS_ACTIVE_IDS_LEX_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: REDIS_ACTIVE_IDS_LEX_KEY
             - name: REDIS_ACTIVE_WINDOW_MS
               valueFrom:
                 configMapKeyRef:
