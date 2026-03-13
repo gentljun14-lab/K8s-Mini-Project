@@ -68,6 +68,25 @@ export function buildApiUrl(path: string) {
   return `${base}${normalizedPath}`
 }
 
+export function buildWebSocketUrl(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+
+  if (
+    QUERY_API_BASE.startsWith('http://') ||
+    QUERY_API_BASE.startsWith('https://') ||
+    QUERY_API_BASE.startsWith('//')
+  ) {
+    const absoluteBase = QUERY_API_BASE.startsWith('//')
+      ? `${window.location.protocol}${QUERY_API_BASE}`
+      : QUERY_API_BASE
+    const baseUrl = new URL(absoluteBase, window.location.origin)
+    return `${baseUrl.protocol === 'https:' ? 'wss:' : 'ws:'}//${baseUrl.host}${normalizedPath}`
+  }
+
+  return `${protocol}//${window.location.host}${normalizedPath}`
+}
+
 function parseNumber(value: unknown): number {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? Math.trunc(value) : 0
@@ -633,16 +652,32 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
 
     retryDelayRef.current = SSE_RETRY_MIN_MS
-    const baseUrl = new URL(buildApiUrl('/api/vehicles/ws'), window.location.origin)
+    const basePath = (
+      QUERY_API_BASE.startsWith('http://') ||
+      QUERY_API_BASE.startsWith('https://') ||
+      QUERY_API_BASE.startsWith('//')
+    )
+      ? '/api/vehicles/ws'
+      : '/ws/vehicles'
+    const baseUrl = new URL(buildWebSocketUrl(basePath))
     addFilters(baseUrl)
-    const protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:'
     const params = baseUrl.searchParams
     params.set('compact', useCompact ? '1' : '0')
     params.set('summary', String(useCompact))
     params.set('since', String(sinceRef.current))
 
-    const wsUrl = `${protocol}//${baseUrl.host}${baseUrl.pathname}?${params.toString()}`
-    const socket = new WebSocket(wsUrl)
+    const wsUrl = `${baseUrl.protocol}//${baseUrl.host}${baseUrl.pathname}?${params.toString()}`
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(wsUrl)
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? `WebSocket 초기화 실패: ${error.message}`
+          : 'WebSocket 초기화에 실패했습니다.',
+      )
+      return
+    }
     websocketRef.current = socket
 
     socket.onopen = () => {

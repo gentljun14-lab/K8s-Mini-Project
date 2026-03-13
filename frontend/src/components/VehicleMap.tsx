@@ -338,6 +338,9 @@ export default function VehicleMap({
       zoom={7}
       style={{ width: '100%', height: '100%' }}
       preferCanvas
+      scrollWheelZoom={focusedVehicleId ? 'center' : true}
+      doubleClickZoom={focusedVehicleId ? 'center' : true}
+      touchZoom={focusedVehicleId ? 'center' : true}
     >
       <MapBoundsTracker
         onBoundsChange={(nextBounds, nextZoom) => {

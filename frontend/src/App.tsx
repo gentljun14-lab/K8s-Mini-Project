@@ -299,6 +299,12 @@ function App() {
 
   const handleVehicleSelect = useCallback(
     (vehicleId: string) => {
+      if (focusedVehicleId === vehicleId) {
+        setFocusedVehicleId(null)
+        setFocusSearchText('')
+        return
+      }
+
       if (!focusTracking) {
         setFocusedVehicleId((prev) => (prev === vehicleId ? null : vehicleId))
         return
@@ -308,7 +314,7 @@ function App() {
         setFocusSearchText(vehicleId)
       }
     },
-    [focusTracking, vehicleOptions],
+    [focusTracking, focusedVehicleId, vehicleOptions],
   )
 
   return (
