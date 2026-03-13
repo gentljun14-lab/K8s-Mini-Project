@@ -5,6 +5,7 @@ import type { Vehicle } from './types/vehicle'
 import './App.css'
 
 function App() {
+  const [transportMode, setTransportMode] = useState<'polling' | 'stream' | 'websocket'>('polling')
   const [viewportFilter, setViewportFilter] = useState<{
     minLat: number
     maxLat: number
@@ -13,8 +14,9 @@ function App() {
     zoom: number
   } | null>(null)
   const { vehicles, loading, error, lastUpdated, isRealtimeConnected } = useVehicles(1000, {
-    enableSSE: true,
+    enableSSE: transportMode !== 'polling',
     useCompact: true,
+    useWebSocket: transportMode === 'websocket',
     filters: viewportFilter
       ? {
           minLat: viewportFilter.minLat,
@@ -276,9 +278,40 @@ function App() {
           <h1>Connected Car Dashboard</h1>
           <p className="header-subtitle">실시간 차량 위치와 재생 이력을 하나의 지도에서 관리합니다.</p>
         </div>
-        <div className="header-badge">
-          <span className={`live-dot ${isRealtimeConnected && !replayMode ? 'online' : 'offline'}`} />
-          {replayMode ? 'Replay Session' : isRealtimeConnected ? 'Live Stream' : 'Polling Mode'}
+        <div className="header-actions">
+          <div className="mode-switcher" role="group" aria-label="데이터 수신 모드 선택">
+            <button
+              type="button"
+              className={`mode-option ${transportMode === 'polling' ? 'active' : ''}`}
+              onClick={() => setTransportMode('polling')}
+            >
+              Polling
+            </button>
+            <button
+              type="button"
+              className={`mode-option ${transportMode === 'stream' ? 'active' : ''}`}
+              onClick={() => setTransportMode('stream')}
+            >
+              Stream
+            </button>
+            <button
+              type="button"
+              className={`mode-option ${transportMode === 'websocket' ? 'active' : ''}`}
+              onClick={() => setTransportMode('websocket')}
+            >
+              WebSocket
+            </button>
+          </div>
+          <div className="header-badge">
+            <span className={`live-dot ${isRealtimeConnected && !replayMode ? 'online' : 'offline'}`} />
+            {replayMode
+              ? 'Replay Session'
+              : transportMode === 'polling'
+                ? 'Polling Mode'
+                : transportMode === 'websocket'
+                  ? (isRealtimeConnected ? 'WebSocket Live' : 'WebSocket Retry')
+                  : (isRealtimeConnected ? 'Live Stream' : 'Stream Retry')}
+          </div>
         </div>
       </header>
       <div className={`controls-slot ${controlsExpanded ? 'expanded' : 'collapsed'}`}>

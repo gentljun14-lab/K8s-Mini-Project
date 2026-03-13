@@ -994,19 +994,30 @@ async def stream_vehicles(
     async def _generator() -> asyncio.AsyncGenerator[str, None]:
         current_since = max(0, since)
 
-        snapshot = _collect_vehicles_from_latest(
-            vehicle_id=vehicle_id,
-            state=state,
-            city=city,
-            min_speed=min_speed,
-            max_speed=max_speed,
-            min_lat=min_lat,
-            max_lat=max_lat,
-            min_lng=min_lng,
-            max_lng=max_lng,
-            compact=compact,
-            summary=summary,
-        )
+        try:
+            snapshot = _collect_vehicles_from_latest(
+                vehicle_id=vehicle_id,
+                state=state,
+                city=city,
+                min_speed=min_speed,
+                max_speed=max_speed,
+                min_lat=min_lat,
+                max_lat=max_lat,
+                min_lng=min_lng,
+                max_lng=max_lng,
+                compact=compact,
+                summary=summary,
+            )
+        except Exception as exc:
+            snapshot = []
+            yield _sse_event(
+                {
+                    "type": "error",
+                    "message": f"snapshot collection failed: {exc}",
+                    "stream_last_id": _latest_stream_id(),
+                    "received_at": int(time.time() * 1000),
+                }
+            )
 
         snapshot_payload: Dict[str, Any] = {
             "type": "snapshot",
@@ -1028,19 +1039,31 @@ async def stream_vehicles(
             if await request.is_disconnected():
                 break
 
-            updates = _collect_delta_since(current_since, compact=compact, summary=summary)
-            filtered = _filter_updates_by(
-                updates,
-                vehicle_id=vehicle_id,
-                state=state,
-                city=city,
-                min_speed=min_speed,
-                max_speed=max_speed,
-                min_lat=min_lat,
-                max_lat=max_lat,
-                min_lng=min_lng,
-                max_lng=max_lng,
-            )
+            try:
+                updates = _collect_delta_since(current_since, compact=compact, summary=summary)
+                filtered = _filter_updates_by(
+                    updates,
+                    vehicle_id=vehicle_id,
+                    state=state,
+                    city=city,
+                    min_speed=min_speed,
+                    max_speed=max_speed,
+                    min_lat=min_lat,
+                    max_lat=max_lat,
+                    min_lng=min_lng,
+                    max_lng=max_lng,
+                )
+            except Exception as exc:
+                yield _sse_event(
+                    {
+                        "type": "error",
+                        "message": f"delta collection failed: {exc}",
+                        "stream_last_id": _latest_stream_id(),
+                        "received_at": int(time.time() * 1000),
+                    }
+                )
+                await asyncio.sleep(max(0.5, heartbeat_ms / 1000))
+                continue
 
             if filtered:
                 yield _sse_event(
@@ -1088,19 +1111,31 @@ async def websocket_vehicles(
     await websocket.accept()
     current_since = max(0, since)
     try:
-        snapshot = _collect_vehicles_from_latest(
-            compact=compact,
-            summary=summary,
-            vehicle_id=vehicle_id,
-            state=state,
-            city=city,
-            min_speed=min_speed,
-            max_speed=max_speed,
-            min_lat=min_lat,
-            max_lat=max_lat,
-            min_lng=min_lng,
-            max_lng=max_lng,
-        )
+        try:
+            snapshot = _collect_vehicles_from_latest(
+                compact=compact,
+                summary=summary,
+                vehicle_id=vehicle_id,
+                state=state,
+                city=city,
+                min_speed=min_speed,
+                max_speed=max_speed,
+                min_lat=min_lat,
+                max_lat=max_lat,
+                min_lng=min_lng,
+                max_lng=max_lng,
+            )
+        except Exception as exc:
+            snapshot = []
+            await websocket.send_text(
+                _safe_json_dumps(
+                    {
+                        "type": "error",
+                        "message": f"snapshot collection failed: {exc}",
+                        "stream_last_id": _latest_stream_id(),
+                    }
+                )
+            )
         await websocket.send_text(
             _safe_json_dumps(
                 {
@@ -1117,18 +1152,31 @@ async def websocket_vehicles(
             current_since = latest
 
         while True:
-            updates = _filter_updates_by(
-                _collect_delta_since(current_since, compact=compact, summary=summary),
-                vehicle_id=vehicle_id,
-                state=state,
-                city=city,
-                min_speed=min_speed,
-                max_speed=max_speed,
-                min_lat=min_lat,
-                max_lat=max_lat,
-                min_lng=min_lng,
-                max_lng=max_lng,
-            )
+            try:
+                updates = _filter_updates_by(
+                    _collect_delta_since(current_since, compact=compact, summary=summary),
+                    vehicle_id=vehicle_id,
+                    state=state,
+                    city=city,
+                    min_speed=min_speed,
+                    max_speed=max_speed,
+                    min_lat=min_lat,
+                    max_lat=max_lat,
+                    min_lng=min_lng,
+                    max_lng=max_lng,
+                )
+            except Exception as exc:
+                await websocket.send_text(
+                    _safe_json_dumps(
+                        {
+                            "type": "error",
+                            "message": f"delta collection failed: {exc}",
+                            "stream_last_id": _latest_stream_id(),
+                        }
+                    )
+                )
+                await asyncio.sleep(1)
+                continue
             if updates:
                 await websocket.send_text(
                     _safe_json_dumps(
