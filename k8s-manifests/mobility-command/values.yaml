@@ -8,7 +8,7 @@ command:
     hpa:
       enabled: true
       minReplicas: 2
-      maxReplicas: 10
+      maxReplicas: 12
       cpuUtilization: 50
       requests:
         cpu: "200m"
