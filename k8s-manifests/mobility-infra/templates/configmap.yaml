@@ -27,6 +27,8 @@ data:
   REDIS_PORT: "6379"
   REDIS_TTL_SEC: "60"
   REDIS_KEY_PATTERN: "vehicle:*:latest"
+  REDIS_ACTIVE_IDS_KEY: "vehicle:active_ids"
+  REDIS_ACTIVE_WINDOW_MS: "120000"
 
   # --- API Ports ---
   QUERY_API_PORT: "8000"

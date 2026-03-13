@@ -474,24 +474,15 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
   }
 
-  function updateCursorFromVehicles(updates: Vehicle[]) {
-    if (updates.length === 0) {
+  function updateCursorFromPayload(payload: unknown) {
+    if (!payload || typeof payload !== 'object') {
       return
     }
 
-    const latest = updates.reduce(
-      (acc, cur) => Math.max(
-        acc,
-        normalizeTimestamp(
-          cur.event_ts,
-          parseReceivedAt(cur.received_at),
-        ),
-      ),
-      0,
-    )
-
-    if (latest > 0) {
-      sinceRef.current = Math.max(sinceRef.current, latest)
+    const streamLastId = (payload as { stream_last_id?: unknown }).stream_last_id
+    const cursor = parseNumber(streamLastId)
+    if (cursor > 0) {
+      sinceRef.current = Math.max(sinceRef.current, cursor)
     }
   }
 
@@ -525,8 +516,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
 
     const payload: unknown = await res.json()
+    updateCursorFromPayload(payload)
     const loaded = parseVehicles(payload)
-    updateCursorFromVehicles(loaded)
     return loaded
   }
 
@@ -557,11 +548,8 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
     }
 
     const asDelta = payload as VehicleDeltaResponse
-    if (typeof asDelta.stream_last_id !== 'undefined') {
-      sinceRef.current = Math.max(sinceRef.current, parseNumber(asDelta.stream_last_id))
-    }
+    updateCursorFromPayload(asDelta)
     const updates = parseVehicles(asDelta)
-    updateCursorFromVehicles(updates)
     return updates
   }
 
@@ -617,7 +605,6 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
         if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
           const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
           setVehicles(normalized)
-          updateCursorFromVehicles(normalized)
           setLastUpdated(new Date())
           return
         }
@@ -625,7 +612,6 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
         if (Array.isArray(parsed?.updates)) {
           const updates = parseVehicles(parsed as VehicleDeltaResponse)
           setVehicles((prev) => applyVehicles(prev, updates))
-          updateCursorFromVehicles(updates)
           setLastUpdated(new Date())
         }
       } catch {
@@ -732,7 +718,6 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
           if (parsed?.type === 'snapshot' && Array.isArray(parsed?.vehicles)) {
             const normalized = parseVehicles(parsed as VehicleSnapshotsResponse)
             setVehicles(normalized)
-            updateCursorFromVehicles(normalized)
             setLastUpdated(new Date())
             return
           }
@@ -740,7 +725,6 @@ export function useVehicles(intervalMs = 1000, options: UseVehiclesOptions = {})
           if (Array.isArray(parsed?.updates)) {
             const updates = parseVehicles(parsed as VehicleDeltaResponse)
             setVehicles((prev) => applyVehicles(prev, updates))
-            updateCursorFromVehicles(updates)
             setLastUpdated(new Date())
           }
         } catch {

@@ -17,6 +17,8 @@ from database import redis_client
 app = FastAPI(title="Connected Car Query API")
 
 REDIS_KEY_PATTERN = os.getenv("REDIS_KEY_PATTERN", "vehicle:*:latest")
+REDIS_ACTIVE_IDS_KEY = os.getenv("REDIS_ACTIVE_IDS_KEY", "vehicle:active_ids")
+REDIS_ACTIVE_WINDOW_MS = int(os.getenv("REDIS_ACTIVE_WINDOW_MS", "120000"))
 VEHICLE_UPDATE_STREAM = os.getenv("VEHICLE_UPDATE_STREAM", "vehicle:updates")
 VEHICLE_UPDATE_BATCH = int(os.getenv("VEHICLE_UPDATE_BATCH", "500"))
 DEFAULT_LIMIT = int(os.getenv("VEHICLE_LIST_DEFAULT_LIMIT", "500"))
@@ -147,6 +149,46 @@ def _extract_vehicle_id(key: str) -> Optional[str]:
     if len(parts) < 3:
         return None
     return parts[1]
+
+
+def _extract_stream_cursor(fields: Dict[str, Any]) -> int:
+    if not isinstance(fields, dict):
+        return 0
+
+    cursor_ts = _to_int(fields.get("cursor_ts"))
+    if cursor_ts > 0:
+        return cursor_ts
+    return _to_int(fields.get("event_ts"))
+
+
+def _iter_active_vehicle_ids() -> Iterable[str]:
+    cutoff_ms = max(0, int(time.time() * 1000) - REDIS_ACTIVE_WINDOW_MS)
+    seen: set[str] = set()
+
+    try:
+        redis_client.zremrangebyscore(REDIS_ACTIVE_IDS_KEY, 0, cutoff_ms)
+        members = redis_client.zrange(REDIS_ACTIVE_IDS_KEY, 0, -1)
+    except Exception:
+        members = []
+
+    for member in members:
+        vehicle_id = _coerce_str(member).strip()
+        if not vehicle_id or vehicle_id in seen:
+            continue
+        seen.add(vehicle_id)
+        yield vehicle_id
+
+    if seen:
+        return
+
+    for key in _iter_latest_keys():
+        if not isinstance(key, str):
+            key = str(key)
+        vehicle_id = _extract_vehicle_id(key)
+        if not vehicle_id or vehicle_id in seen:
+            continue
+        seen.add(vehicle_id)
+        yield vehicle_id
 
 
 def _extract_latest_event_ts(vehicle: Dict[str, Any]) -> int:
@@ -464,14 +506,18 @@ def _iter_latest_keys() -> Iterable[str]:
 
 
 def _latest_payloads() -> Iterable[Dict[str, Any]]:
-    for key in _iter_latest_keys():
-        if not isinstance(key, str):
-            key = str(key)
-        vehicle_id = _extract_vehicle_id(key)
-        if not vehicle_id:
-            continue
+    vehicle_ids = list(_iter_active_vehicle_ids())
+    if not vehicle_ids:
+        return
 
-        raw_value = redis_client.get(key)
+    keys = [f"vehicle:{vehicle_id}:latest" for vehicle_id in vehicle_ids]
+
+    try:
+        raw_values = redis_client.mget(keys)
+    except Exception:
+        raw_values = [redis_client.get(key) for key in keys]
+
+    for vehicle_id, raw_value in zip(vehicle_ids, raw_values):
         if not raw_value:
             continue
 
@@ -532,54 +578,75 @@ def _collect_delta_since(
     *,
     compact: bool = True,
     summary: bool = False,
-) -> List[Dict[str, Any]]:
-    if since_ms <= 0:
-        return []
+) -> Tuple[List[Dict[str, Any]], int]:
+    if since_ms < 0:
+        since_ms = 0
 
     updates: Dict[str, Tuple[int, Dict[str, Any]]] = {}
+    latest_cursor = since_ms
+    page_max = "+"
 
-    try:
-        entries = redis_client.xrevrange(VEHICLE_UPDATE_STREAM, count=VEHICLE_UPDATE_BATCH)
-    except Exception:
-        return []
+    while True:
+        try:
+            entries = redis_client.xrevrange(
+                VEHICLE_UPDATE_STREAM,
+                max=page_max,
+                min="-",
+                count=VEHICLE_UPDATE_BATCH,
+            )
+        except Exception:
+            return [], latest_cursor
 
-    for _, fields in entries:
-        if not isinstance(fields, dict):
-            continue
+        if not entries:
+            break
 
-        event_ts = _to_int(fields.get("event_ts"))
-        if event_ts <= since_ms:
-            continue
+        reached_cutoff = False
+        last_entry_id: Optional[str] = None
 
-        raw_snapshot = fields.get("v")
-        payload = _safe_json_loads(raw_snapshot)
-        if payload is None and isinstance(raw_snapshot, dict):
-            payload = dict(raw_snapshot)
+        for entry_id, fields in entries:
+            last_entry_id = entry_id if isinstance(entry_id, str) else str(entry_id)
+            if not isinstance(fields, dict):
+                continue
 
-        if not isinstance(payload, dict):
-            continue
+            cursor_ts = _extract_stream_cursor(fields)
+            if cursor_ts <= since_ms:
+                reached_cutoff = True
+                break
 
-        payload = dict(payload)
-        payload["event_ts"] = event_ts
-        vehicle_id = payload.get("vehicle_id")
-        if not vehicle_id:
-            continue
+            latest_cursor = max(latest_cursor, cursor_ts)
+            raw_snapshot = fields.get("v")
+            payload = _safe_json_loads(raw_snapshot)
+            if payload is None and isinstance(raw_snapshot, dict):
+                payload = dict(raw_snapshot)
 
-        if summary:
-            built = _build_vehicle_summary(payload)
-        elif compact:
-            built = _build_vehicle_snapshot(payload)
-        else:
-            built = _build_full_vehicle(payload)
-        latest = built.get("event_ts", 0)
-        if not isinstance(latest, int):
-            latest = _to_int(latest)
+            if not isinstance(payload, dict):
+                continue
 
-        existing = updates.get(vehicle_id)
-        if existing is None or existing[0] < latest:
-            updates[vehicle_id] = (latest, built)
+            payload = dict(payload)
+            payload["event_ts"] = _to_int(fields.get("event_ts")) or payload.get("event_ts")
+            payload["cursor_ts"] = cursor_ts
+            vehicle_id = payload.get("vehicle_id")
+            if not vehicle_id:
+                continue
 
-    return [updates[key][1] for key in sorted(updates.keys())]
+            if summary:
+                built = _build_vehicle_summary(payload)
+            elif compact:
+                built = _build_vehicle_snapshot(payload)
+            else:
+                built = _build_full_vehicle(payload)
+
+            built["cursor_ts"] = cursor_ts
+            existing = updates.get(vehicle_id)
+            if existing is None or existing[0] < cursor_ts:
+                updates[vehicle_id] = (cursor_ts, built)
+
+        if reached_cutoff or len(entries) < VEHICLE_UPDATE_BATCH or not last_entry_id:
+            break
+
+        page_max = f"({last_entry_id}"
+
+    return [updates[key][1] for key in sorted(updates.keys())], latest_cursor
 
 
 def _filter_updates_by(
@@ -661,9 +728,9 @@ def _latest_stream_id() -> int:
     for _, fields in entries:
         if not isinstance(fields, dict):
             continue
-        event_ts = _to_int(fields.get("event_ts"))
-        if event_ts > 0:
-            return event_ts
+        cursor_ts = _extract_stream_cursor(fields)
+        if cursor_ts > 0:
+            return cursor_ts
 
     return 0
 
@@ -731,7 +798,11 @@ def list_vehicles(
         compact=False,
     )
 
-    return {"count": min(len(vehicles), normalized_limit), "vehicles": vehicles[:normalized_limit]}
+    return {
+        "count": min(len(vehicles), normalized_limit),
+        "vehicles": vehicles[:normalized_limit],
+        "stream_last_id": _latest_stream_id(),
+    }
 
 
 @app.get("/api/vehicles/list")
@@ -794,8 +865,9 @@ def query_vehicles(
     normalized_limit = min(max(1, limit), MAX_LIMIT)
 
     if since and since > 0:
+        updates, latest_stream_id = _collect_delta_since(since, compact=compact, summary=summary)
         updates = _filter_updates_by(
-            _collect_delta_since(since, compact=compact, summary=summary),
+            updates,
             vehicle_id=vehicle_id,
             include_vehicle_id=include_vehicle_id,
             state=state,
@@ -812,7 +884,7 @@ def query_vehicles(
             "type": "delta",
             "count": min(len(updates), normalized_limit),
             "updates": updates[:normalized_limit],
-            "stream_last_id": _latest_stream_id(),
+            "stream_last_id": latest_stream_id,
         }
 
     vehicles = _collect_vehicles_from_latest(
@@ -863,8 +935,9 @@ def watch_vehicles(
     normalized_limit = min(max(1, limit), MAX_LIMIT)
 
     if since and since > 0:
+        updates, latest_stream_id = _collect_delta_since(since, compact=compact, summary=summary)
         updates = _filter_updates_by(
-            _collect_delta_since(since, compact=compact, summary=summary),
+            updates,
             vehicle_id=vehicle_id,
             include_vehicle_id=include_vehicle_id,
             state=state,
@@ -881,7 +954,7 @@ def watch_vehicles(
             "type": "delta",
             "count": min(len(updates), normalized_limit),
             "updates": updates[:normalized_limit],
-            "stream_last_id": _latest_stream_id(),
+            "stream_last_id": latest_stream_id,
         }
 
     vehicles = _collect_vehicles_from_latest(
@@ -938,7 +1011,11 @@ def list_vehicles_compact(
         compact=True,
     )
 
-    return {"count": min(len(vehicles), normalized_limit), "vehicles": vehicles[:normalized_limit]}
+    return {
+        "count": min(len(vehicles), normalized_limit),
+        "vehicles": vehicles[:normalized_limit],
+        "stream_last_id": _latest_stream_id(),
+    }
 
 
 @app.get("/api/vehicles/delta")
@@ -958,8 +1035,9 @@ def list_vehicles_delta(
     max_lng: Optional[float] = Query(default=None, alias="maxLng"),
     limit: int = Query(default=DEFAULT_LIMIT),
 ) -> Dict[str, Any]:
+    updates, latest_stream_id = _collect_delta_since(since, compact=compact, summary=summary)
     updates = _filter_updates_by(
-        _collect_delta_since(since, compact=compact, summary=summary),
+        updates,
         vehicle_id=vehicle_id,
         include_vehicle_id=include_vehicle_id,
         state=state,
@@ -977,7 +1055,7 @@ def list_vehicles_delta(
     return {
         "count": min(len(updates), normalized_limit),
         "updates": updates[:normalized_limit],
-        "stream_last_id": _latest_stream_id(),
+        "stream_last_id": latest_stream_id,
     }
 
 
@@ -999,8 +1077,9 @@ def list_vehicle_changes(
     summary: bool = Query(default=False),
 ) -> Dict[str, Any]:
     normalized_limit = min(max(1, limit), MAX_LIMIT)
+    updates, latest_stream_id = _collect_delta_since(since, compact=compact, summary=summary)
     updates = _filter_updates_by(
-        _collect_delta_since(since, compact=compact, summary=summary),
+        updates,
         vehicle_id=vehicle_id,
         include_vehicle_id=include_vehicle_id,
         state=state,
@@ -1018,7 +1097,7 @@ def list_vehicle_changes(
         "type": "delta",
         "count": min(len(updates), normalized_limit),
         "updates": updates[:normalized_limit],
-        "stream_last_id": _latest_stream_id(),
+        "stream_last_id": latest_stream_id,
     }
 
 
@@ -1043,6 +1122,7 @@ async def stream_vehicles(
 ):
     async def _generator() -> AsyncGenerator[str, None]:
         current_since = max(0, since)
+        snapshot_stream_id = _latest_stream_id()
 
         try:
             snapshot = _collect_vehicles_from_latest(
@@ -1065,7 +1145,7 @@ async def stream_vehicles(
                 {
                     "type": "error",
                     "message": f"snapshot collection failed: {exc}",
-                    "stream_last_id": _latest_stream_id(),
+                    "stream_last_id": snapshot_stream_id,
                     "received_at": int(time.time() * 1000),
                 }
             )
@@ -1074,24 +1154,20 @@ async def stream_vehicles(
             "type": "snapshot",
             "count": len(snapshot),
             "vehicles": snapshot,
-            "stream_last_id": _latest_stream_id(),
+            "stream_last_id": snapshot_stream_id,
             "received_at": int(time.time() * 1000),
         }
         yield _sse_event(snapshot_payload)
 
-        latest_in_snapshot = max(
-            (_extract_latest_event_ts(item) for item in snapshot),
-            default=_latest_stream_id(),
-        )
-        if latest_in_snapshot > current_since:
-            current_since = latest_in_snapshot
+        if snapshot_stream_id > current_since:
+            current_since = snapshot_stream_id
 
         while True:
             if await request.is_disconnected():
                 break
 
             try:
-                updates = _collect_delta_since(current_since, compact=compact, summary=summary)
+                updates, latest_stream_id = _collect_delta_since(current_since, compact=compact, summary=summary)
                 filtered = _filter_updates_by(
                     updates,
                     vehicle_id=vehicle_id,
@@ -1123,13 +1199,10 @@ async def stream_vehicles(
                         "type": "delta",
                         "count": len(filtered),
                         "updates": filtered[-max(1, max_updates):],
-                        "stream_last_id": _latest_stream_id(),
+                        "stream_last_id": latest_stream_id,
                     }
                 )
-                current_since = max(
-                    current_since,
-                    max((_to_int(item.get("event_ts")) for item in filtered), default=current_since),
-                )
+                current_since = max(current_since, latest_stream_id)
             else:
                 yield _sse_event(
                     {
@@ -1172,12 +1245,13 @@ async def websocket_vehicles(
     await websocket.accept()
     current_since = max(0, since)
     try:
+        snapshot_stream_id = _latest_stream_id()
         await websocket.send_text(
             _safe_json_dumps(
                 {
                     "type": "subscribed",
                     "transport": "websocket",
-                    "stream_last_id": _latest_stream_id(),
+                    "stream_last_id": snapshot_stream_id,
                     "received_at": int(time.time() * 1000),
                 }
             )
@@ -1204,7 +1278,7 @@ async def websocket_vehicles(
                     {
                         "type": "error",
                         "message": f"snapshot collection failed: {exc}",
-                        "stream_last_id": _latest_stream_id(),
+                        "stream_last_id": snapshot_stream_id,
                     }
                 )
             )
@@ -1214,20 +1288,20 @@ async def websocket_vehicles(
                     "type": "snapshot",
                     "count": len(snapshot),
                     "vehicles": snapshot,
-                    "stream_last_id": _latest_stream_id(),
+                    "stream_last_id": snapshot_stream_id,
                     "received_at": int(time.time() * 1000),
                 }
             )
         )
 
-        latest = max((_extract_latest_event_ts(item) for item in snapshot), default=0)
-        if latest > current_since:
-            current_since = latest
+        if snapshot_stream_id > current_since:
+            current_since = snapshot_stream_id
 
         while True:
             try:
+                updates, latest_stream_id = _collect_delta_since(current_since, compact=compact, summary=summary)
                 updates = _filter_updates_by(
-                    _collect_delta_since(current_since, compact=compact, summary=summary),
+                    updates,
                     vehicle_id=vehicle_id,
                     include_vehicle_id=include_vehicle_id,
                     state=state,
@@ -1258,15 +1332,12 @@ async def websocket_vehicles(
                             "type": "delta",
                             "count": len(updates),
                             "updates": updates,
-                            "stream_last_id": _latest_stream_id(),
+                            "stream_last_id": latest_stream_id,
                             "received_at": int(time.time() * 1000),
                         }
                     )
                 )
-                current_since = max(
-                    current_since,
-                    max((_to_int(item.get("event_ts")) for item in updates), default=current_since),
-                )
+                current_since = max(current_since, latest_stream_id)
             else:
                 await websocket.send_text(
                     _safe_json_dumps(

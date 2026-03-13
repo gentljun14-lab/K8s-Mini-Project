@@ -2,6 +2,7 @@ import json
 import os
 import signal
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from kafka import KafkaConsumer
@@ -9,6 +10,7 @@ from kafka.errors import KafkaError
 from database import redis_client
 
 RUNNING = True
+LAST_CURSOR_TS = 0
 
 
 def _get_float(value, default=0.0):
@@ -24,6 +26,57 @@ def _coerce_str(value, default=None):
   if value is None:
     return default
   return str(value)
+
+
+def _parse_epoch_ms(value: Any) -> int:
+  if value is None:
+    return 0
+  if isinstance(value, (int, float)):
+    return int(value)
+
+  text = str(value).strip()
+  if not text:
+    return 0
+
+  if text.isdigit():
+    try:
+      return int(text)
+    except (TypeError, ValueError):
+      return 0
+
+  try:
+    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+      parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+  except Exception:
+    return 0
+
+
+def _extract_source_event_ts(vehicle_data: dict) -> int:
+  if not isinstance(vehicle_data, dict):
+    return 0
+
+  candidates = (
+    vehicle_data.get("event_ts"),
+    vehicle_data.get("timestamp"),
+    vehicle_data.get("received_at"),
+    vehicle_data.get("vehicle", {}).get("timestamp_utc") if isinstance(vehicle_data.get("vehicle"), dict) else None,
+    vehicle_data.get("raw", {}).get("vehicle", {}).get("timestamp_utc") if isinstance(vehicle_data.get("raw"), dict) else None,
+  )
+  for candidate in candidates:
+    parsed = _parse_epoch_ms(candidate)
+    if parsed > 0:
+      return parsed
+  return 0
+
+
+def _next_cursor_ts() -> int:
+  global LAST_CURSOR_TS
+
+  now_ms = int(time.time() * 1000)
+  LAST_CURSOR_TS = max(now_ms, LAST_CURSOR_TS + 1)
+  return LAST_CURSOR_TS
 
 
 def _pick_vehicle_meta(vehicle_data: dict, key: str, default: str = "") -> str:
@@ -61,14 +114,19 @@ def _build_snapshot(vehicle_data: dict) -> dict:
     or "UNKNOWN"
   )
   received = (
-    _coerce_str(vehicle_data.get("timestamp"), _coerce_str(vehicle_data.get("vehicle", {}).get("timestamp_utc")))
+    _coerce_str(vehicle_data.get("received_at"))
+    or _coerce_str(vehicle_data.get("timestamp"))
+    or _coerce_str(vehicle_data.get("vehicle", {}).get("timestamp_utc"))
   )
   if received is None:
     received = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+  source_event_ts = _extract_source_event_ts(vehicle_data)
+
   return {
     "vehicle_id": vehicle_id,
     "received_at": received,
+    "event_ts": source_event_ts,
     "state": state,
     "speed_kmh": _get_float(vehicle_data.get("speed_kmh", vehicle_data.get("trip", {}).get("speed_kmh")), 0.0),
     "soc_pct": _get_float(vehicle_data.get("soc_pct", vehicle_data.get("battery", {}).get("soc_pct")), 0.0),
@@ -109,6 +167,7 @@ def start_consumer():
   batch_size = int(os.getenv("KAFKA_BATCH_SIZE", "200"))
   update_stream = os.getenv("VEHICLE_UPDATE_STREAM", "vehicle:updates")
   stream_maxlen = int(os.getenv("VEHICLE_UPDATE_STREAM_MAXLEN", "5000"))
+  active_ids_key = os.getenv("REDIS_ACTIVE_IDS_KEY", "vehicle:active_ids")
 
   consumer = None
 
@@ -149,16 +208,28 @@ def start_consumer():
               continue
 
             key = f"vehicle:{vehicle_id}:latest"
-            redis_client.set(key, json.dumps(vehicle_data), ex=ttl_sec)
+            source_event_ts = _extract_source_event_ts(vehicle_data)
+            existing_payload = _safe_json_loads(redis_client.get(key))
+            existing_event_ts = _extract_source_event_ts(existing_payload) if existing_payload else 0
+            if source_event_ts > 0 and existing_event_ts > source_event_ts:
+              continue
 
-            snapshot = _build_snapshot(vehicle_data)
+            cursor_ts = _next_cursor_ts()
+            latest_payload = dict(vehicle_data)
+            if source_event_ts > 0:
+              latest_payload["event_ts"] = source_event_ts
+            latest_payload["projected_at_ms"] = cursor_ts
+
+            redis_client.set(key, json.dumps(latest_payload), ex=ttl_sec)
+            redis_client.zadd(active_ids_key, {vehicle_id: cursor_ts})
+
+            snapshot = _build_snapshot(latest_payload)
             if snapshot.get("vehicle_id"):
-              event_ts = int(time.time() * 1000)
-              snapshot["event_ts"] = event_ts
               payload = {
                 "v": json.dumps(snapshot, ensure_ascii=False),
                 "vehicle_id": vehicle_id,
-                "event_ts": str(event_ts),
+                "event_ts": str(source_event_ts or cursor_ts),
+                "cursor_ts": str(cursor_ts),
               }
               redis_client.xadd(update_stream, payload, maxlen=stream_maxlen, approximate=True)
             updated += 1

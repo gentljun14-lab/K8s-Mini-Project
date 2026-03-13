@@ -28,9 +28,14 @@ app = FastAPI(title=APP_NAME)
 
 
 producer: Optional[KafkaProducer] = None
-if KAFKA_ENABLED:
+
+
+def _init_producer() -> Optional[KafkaProducer]:
+    if not KAFKA_ENABLED:
+        return None
+
     try:
-        producer = KafkaProducer(
+        initialized = KafkaProducer(
             bootstrap_servers=[s.strip() for s in KAFKA_BROKERS.split(",") if s.strip()],
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             key_serializer=lambda v: v.encode("utf-8") if isinstance(v, str) else None,
@@ -39,8 +44,23 @@ if KAFKA_ENABLED:
             client_id=KAFKA_CLIENT_ID,
         )
         print(f"[producer] initialized: brokers={KAFKA_BROKERS}, topic={KAFKA_TOPIC}")
+        return initialized
     except Exception as exc:
         print(f"[producer] init failed: {exc}")
+        return None
+
+
+def _get_producer() -> Optional[KafkaProducer]:
+    global producer
+
+    if producer is not None:
+        return producer
+
+    producer = _init_producer()
+    return producer
+
+
+producer = _init_producer()
 
 
 class VehicleInfo(BaseModel):
@@ -119,7 +139,10 @@ def _build_kafka_message(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.post("/api/query/telemetry")
 async def ingest_telemetry(data: ConnectedCarData):
-    if not KAFKA_ENABLED or producer is None:
+    global producer
+
+    active_producer = _get_producer()
+    if not KAFKA_ENABLED or active_producer is None:
         raise HTTPException(
             status_code=503,
             detail="Kafka producer is not available. Check command service configuration."
@@ -132,16 +155,17 @@ async def ingest_telemetry(data: ConnectedCarData):
     kafka_payload = _build_kafka_message(payload)
 
     try:
-        future = producer.send(
+        future = active_producer.send(
             KAFKA_TOPIC,
             key=payload["vehicle"]["vehicle_id"],
             value=kafka_payload,
         )
         # 비동기적으로 에러 로깅
         future.add_errback(lambda exc: print(f"[producer] send error: {exc}"))
-        producer.flush(timeout=2.0)
+        future.get(timeout=2.0)
         return {"status": "success", "processed_vehicle": payload["vehicle"]["vehicle_id"]}
     except Exception as exc:
+        producer = None
         print(f"[ingest] send failed: {exc}")
         raise HTTPException(status_code=500, detail="Failed to publish telemetry event.")
 
