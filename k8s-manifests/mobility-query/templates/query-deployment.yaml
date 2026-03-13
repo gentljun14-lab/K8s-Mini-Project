@@ -67,6 +67,21 @@ spec:
                 secretKeyRef:
                   name: mobility-secret
                   key: REDIS_PASSWORD
+            - name: MONGO_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: MONGO_DB
+            - name: MONGO_COLLECTION
+              valueFrom:
+                configMapKeyRef:
+                  name: mobility-config
+                  key: MONGO_COLLECTION
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: mobility-secret
+                  key: MONGO_URI
           readinessProbe:
             httpGet:
               path: /health

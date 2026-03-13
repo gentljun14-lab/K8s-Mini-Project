@@ -103,3 +103,17 @@ export interface VehicleListResponse {
   vehicles: VehicleSnapshot[]
   stream_last_id?: number
 }
+
+export interface ReplayFrame {
+  frame_ts: number
+  vehicles: VehicleSnapshot[]
+}
+
+export interface VehicleReplayResponse {
+  source?: string
+  count: number
+  frames: ReplayFrame[]
+  bucket_ms?: number
+  since_ms?: number
+  detail?: string
+}

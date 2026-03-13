@@ -7,6 +7,7 @@ import type {
   VehicleSnapshotsResponse,
   VehicleListResponse,
   VehicleDeltaResponse,
+  VehicleReplayResponse,
 } from '../types/vehicle'
 import type { RawVehicleData } from '../types/vehicle'
 
@@ -55,7 +56,7 @@ function stripBasePrefix(path: string, base: string): string {
   return path.startsWith('/') ? path : `/${path}`
 }
 
-function buildApiUrl(path: string) {
+export function buildApiUrl(path: string) {
   const base = QUERY_API_BASE.replace(/\/+$/, '')
   const normalizedPath = stripBasePrefix(path, base)
   return `${base}${normalizedPath}`
@@ -102,7 +103,7 @@ function isVehicleSnapshot(input: unknown): input is Record<string, any> {
   )
 }
 
-function toVehicle(input: any): Vehicle {
+export function normalizeVehicle(input: any): Vehicle {
   if (isVehicleSnapshot(input)) {
     const normalizedTripState = 'UNKNOWN' as NonNullable<RawVehicleData['trip']>['state']
     const snapshotInput = input as Record<string, any>
@@ -167,17 +168,36 @@ function parseVehicles(payload: unknown): Vehicle[] {
 
   if ('vehicles' in asVehiclePayload && Array.isArray(asVehiclePayload.vehicles)) {
     return asVehiclePayload.vehicles
-      .map((item) => toVehicle(item as Vehicle | VehicleSnapshot | VehicleSummary))
+      .map((item) => normalizeVehicle(item as Vehicle | VehicleSnapshot | VehicleSummary))
       .filter((item) => Boolean(item.vehicle_id))
   }
 
   if ('updates' in asVehiclePayload && Array.isArray((asVehiclePayload as VehicleDeltaResponse).updates)) {
     return (asVehiclePayload as VehicleDeltaResponse).updates
-      .map((item) => toVehicle(item as Vehicle | VehicleSnapshot | VehicleSummary))
+      .map((item) => normalizeVehicle(item as Vehicle | VehicleSnapshot | VehicleSummary))
       .filter((item) => Boolean(item.vehicle_id))
   }
 
   return []
+}
+
+export function parseReplayFrames(payload: unknown): Vehicle[][] {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+
+  const asReplay = payload as VehicleReplayResponse
+  if (!Array.isArray(asReplay.frames)) {
+    return []
+  }
+
+  return asReplay.frames.map((frame) =>
+    Array.isArray(frame.vehicles)
+      ? frame.vehicles
+          .map((vehicle) => normalizeVehicle(vehicle))
+          .filter((vehicle) => Boolean(vehicle.vehicle_id))
+      : [],
+  )
 }
 
 function applyVehicles(prev: Vehicle[], next: Vehicle[]): Vehicle[] {

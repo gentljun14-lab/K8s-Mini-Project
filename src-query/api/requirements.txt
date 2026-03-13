@@ -1,6 +1,7 @@
 fastapi==0.133.0
 uvicorn==0.41.0
 redis==7.2.0
+pymongo==4.16.0
 pydantic==2.12.5
 python-dotenv==1.2.1
 anyio==4.12.1

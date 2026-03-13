@@ -4,11 +4,13 @@ import asyncio
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from pymongo import MongoClient
+from pymongo.collection import Collection
 
 from database import redis_client
 
@@ -19,6 +21,30 @@ VEHICLE_UPDATE_STREAM = os.getenv("VEHICLE_UPDATE_STREAM", "vehicle:updates")
 VEHICLE_UPDATE_BATCH = int(os.getenv("VEHICLE_UPDATE_BATCH", "500"))
 DEFAULT_LIMIT = int(os.getenv("VEHICLE_LIST_DEFAULT_LIMIT", "500"))
 MAX_LIMIT = int(os.getenv("VEHICLE_LIST_MAX_LIMIT", "5000"))
+MONGO_URI = os.getenv("MONGO_URI", "").strip()
+MONGO_DB = os.getenv("MONGO_DB", "car_db").strip()
+MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "telemetry_history").strip()
+
+_mongo_collection: Optional[Collection] = None
+
+
+def _get_mongo_collection() -> Optional[Collection]:
+    global _mongo_collection
+
+    if _mongo_collection is not None:
+        return _mongo_collection
+
+    if not MONGO_URI:
+        return None
+
+    try:
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=1500)
+        client.admin.command("ping")
+        _mongo_collection = client[MONGO_DB][MONGO_COLLECTION]
+    except Exception:
+        _mongo_collection = None
+
+    return _mongo_collection
 
 
 def _safe_json_loads(raw: Any) -> Optional[Dict[str, Any]]:
@@ -279,6 +305,94 @@ def _build_vehicle_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
         "recent_event": payload.get("recent_event"),
         "model": _extract_vehicle_meta(payload, "model", ""),
         "driver": _extract_vehicle_meta(payload, "driver", ""),
+    }
+
+
+@app.get("/api/vehicles/replay")
+def get_vehicle_replay(
+    seconds: int = Query(default=180, ge=10, le=1800),
+    bucket_ms: int = Query(default=1000, alias="bucketMs", ge=250, le=10000),
+    limit: int = Query(default=180, ge=10, le=600),
+) -> Dict[str, Any]:
+    collection = _get_mongo_collection()
+    if collection is None:
+        return {
+            "source": "mongo",
+            "count": 0,
+            "frames": [],
+            "detail": "MongoDB replay source is not configured",
+        }
+
+    now_ms = int(time.time() * 1000)
+    since_ms = now_ms - (seconds * 1000)
+    max_docs = min(max(limit * 250, 500), 50000)
+
+    try:
+        cursor = collection.find(
+            {"created_at": {"$gte": datetime.fromtimestamp(since_ms / 1000, timezone.utc)}},
+            projection={"_id": 0},
+        ).sort("created_at", 1).limit(max_docs)
+        documents = list(cursor)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"failed to load replay data from MongoDB: {exc}")
+
+    if not documents:
+        return {
+            "source": "mongo",
+            "count": 0,
+            "frames": [],
+            "detail": "No replay data found in MongoDB",
+        }
+
+    frames: List[Dict[str, Any]] = []
+    current_bucket: Optional[int] = None
+    current_state: Dict[str, Dict[str, Any]] = {}
+
+    def flush_frame(bucket: Optional[int]) -> None:
+        if bucket is None or not current_state:
+            return
+
+        frames.append(
+            {
+                "frame_ts": bucket,
+                "vehicles": sorted(current_state.values(), key=lambda item: _coerce_str(item.get("vehicle_id"))),
+            }
+        )
+
+    for document in documents:
+        snapshot = _build_vehicle_snapshot(document if isinstance(document, dict) else {})
+        vehicle_id = _coerce_str(snapshot.get("vehicle_id"))
+        if not vehicle_id:
+            continue
+
+        event_ms = _extract_latest_event_ts(document if isinstance(document, dict) else {})
+        if event_ms <= 0:
+            event_ms = _parse_epoch_ms(document.get("created_at") if isinstance(document, dict) else None)
+        if event_ms <= 0:
+            continue
+
+        bucket = max(since_ms, (event_ms // bucket_ms) * bucket_ms)
+
+        if current_bucket is None:
+            current_bucket = bucket
+        elif bucket != current_bucket:
+            flush_frame(current_bucket)
+            current_bucket = bucket
+
+        snapshot["event_ts"] = event_ms
+        current_state[vehicle_id] = snapshot
+
+    flush_frame(current_bucket)
+
+    if len(frames) > limit:
+        frames = frames[-limit:]
+
+    return {
+        "source": "mongo",
+        "count": len(frames),
+        "frames": frames,
+        "since_ms": since_ms,
+        "bucket_ms": bucket_ms,
     }
 
 
