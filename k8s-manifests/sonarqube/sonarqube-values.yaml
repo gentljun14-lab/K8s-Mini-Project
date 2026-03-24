@@ -1,4 +1,6 @@
-cat > k8s-manifests/sonarqube/sonarqube-values.yaml << 'EOF'
+community:
+  enabled: true
+
 monitoringPasscode: "admin1234!"
 
 persistence:
@@ -26,4 +28,3 @@ resources:
 
 account:
   adminPassword: "admin1234!"
-EOF
