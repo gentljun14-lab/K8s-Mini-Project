@@ -1,3 +1,6 @@
+cat > k8s-manifests/sonarqube/sonarqube-values.yaml << 'EOF'
+monitoringPasscode: "admin1234!"
+
 persistence:
   enabled: true
   storageClass: "nfs-storage"
@@ -23,3 +26,4 @@ resources:
 
 account:
   adminPassword: "admin1234!"
+EOF
