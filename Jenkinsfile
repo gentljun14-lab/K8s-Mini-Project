@@ -39,7 +39,7 @@ pipeline {
     NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
     HARBOR_EMAIL = "ci@k8s-mini.local"
     LEGACY_NFS_PROVISIONER = "cluster.local/nfs-provisioner-nfs-subdir-external-provisioner"
-    SONAR_HOST_URL  = "http://10.2.0.101:30009"
+    SONAR_HOST_URL  = "http://10.0.2.101:30009"
     SONAR_NAMESPACE = "sonarqube"
     SONAR_INGRESS   = "k8s-manifests/sonarqube/sonarqube-ingress.yaml"
   }
