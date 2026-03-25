@@ -39,6 +39,9 @@ pipeline {
     NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
     HARBOR_EMAIL = "ci@k8s-mini.local"
     LEGACY_NFS_PROVISIONER = "cluster.local/nfs-provisioner-nfs-subdir-external-provisioner"
+    SONAR_HOST_URL  = "http://sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+    SONAR_NAMESPACE = "sonarqube"
+    SONAR_INGRESS   = "k8s-manifests/sonarqube/sonarqube-ingress.yaml"
   }
 
   stages {
@@ -89,6 +92,41 @@ pipeline {
         script {
           def shortSha = sh(script: "git rev-parse --short=7 HEAD", returnStdout: true).trim()
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${shortSha}"
+        }
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv('sonarqube') {
+          sh '''
+            set -eu
+            cd ${PROJECT_DIR}
+
+            # SonarScanner CLI 설치 (없는 경우)
+            if ! command -v sonar-scanner >/dev/null 2>&1; then
+              curl -sSLo /tmp/sonar-scanner.zip \
+                https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip
+              unzip -q /tmp/sonar-scanner.zip -d /opt/
+              ln -sf /opt/sonar-scanner-6.2.1.4610-linux-x64/bin/sonar-scanner /usr/local/bin/sonar-scanner
+            fi
+
+            for SERVICE_DIR in src-command/ingest src-command/consumer src-query/api src-query/consumer frontend; do
+              echo "=== Analyzing: ${SERVICE_DIR} ==="
+              sonar-scanner \
+                -Dproject.settings=${SERVICE_DIR}/sonar-project.properties \
+                -Dsonar.host.url=${SONAR_HOST_URL} \
+                -Dsonar.token=${SONAR_AUTH_TOKEN}
+            done
+          '''
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: false
         }
       }
     }
