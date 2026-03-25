@@ -103,13 +103,7 @@ pipeline {
             set -eu
             cd ${PROJECT_DIR}
 
-            # SonarScanner CLI 설치 (없는 경우)
-            if ! command -v sonar-scanner >/dev/null 2>&1; then
-              curl -sSLo /tmp/sonar-scanner.zip \
-                https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip
-              unzip -q /tmp/sonar-scanner.zip -d /opt/
-              ln -sf /opt/sonar-scanner-6.2.1.4610-linux-x64/bin/sonar-scanner /usr/local/bin/sonar-scanner
-            fi
+            sonar-scanner --version
 
             for SERVICE_DIR in src-command/ingest src-command/consumer src-query/api src-query/consumer frontend; do
               echo "=== Analyzing: ${SERVICE_DIR} ==="
