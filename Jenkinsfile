@@ -108,7 +108,8 @@ pipeline {
             for SERVICE_DIR in src-command/ingest src-command/consumer src-query/api src-query/consumer frontend; do
               echo "=== Analyzing: ${SERVICE_DIR} ==="
               sonar-scanner \
-                -Dproject.settings=${SERVICE_DIR}/sonar-project.properties \
+                -Dproject.settings=${WORKSPACE}/${SERVICE_DIR}/sonar-project.properties \
+                -Dsonar.projectBaseDir=${WORKSPACE}/${SERVICE_DIR} \
                 -Dsonar.host.url=${SONAR_HOST_URL} \
                 -Dsonar.token=${SONAR_AUTH_TOKEN}
             done
