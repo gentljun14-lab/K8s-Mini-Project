@@ -20,11 +20,17 @@ service:
 
 resources:
   requests:
-    memory: "1.5Gi"
+    memory: "2Gi"
     cpu: "500m"
   limits:
-    memory: "2Gi"
-    cpu: "1000m"
+    memory: "4Gi"
+    cpu: "2000m"
 
 account:
   adminPassword: "admin1234!"
+
+# startup probe 타임아웃 늘리기
+startupProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  failureThreshold: 18
