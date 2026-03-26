@@ -1,0 +1,305 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Global Status & Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "index": 0, "text": "DOWN" }, "1": { "index": 1, "text": "UP" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      },
+      "targets": [{ "expr": "probe_success{job=\"blackbox-http\", instance=\"http://ingest-server:8000/health\"}", "refId": "A" }],
+      "title": "Ingest API",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "index": 0, "text": "DOWN" }, "1": { "index": 1, "text": "UP" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      },
+      "targets": [{ "expr": "probe_success{job=\"blackbox-http\", instance=\"http://query-api:8000/health\"}", "refId": "A" }],
+      "title": "Query API",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      },
+      "targets": [{ "expr": "sum(alertmanager_alerts{namespace=~\"$namespace\"}) or vector(0)", "refId": "A" }],
+      "title": "Active Alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 90 }, { "color": "green", "value": 99 }]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      },
+      "targets": [{ "expr": "(sum(kube_pod_status_ready{namespace=~\"$namespace\", condition=\"true\"} == 1) / count(kube_pod_status_ready{namespace=~\"$namespace\", condition=\"true\"})) * 100 or vector(100)", "refId": "A" }],
+      "title": "Pod Readiness (K8s)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "conn" }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      },
+      "targets": [{ "expr": "query_websocket_connections_active", "refId": "A" }],
+      "title": "Active WebSockets",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "panels": [],
+      "title": "Application Performance & Latency",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(kafka_publish_latency_seconds_bucket[5m])) by (le))", "legendFormat": "Ingest -> Kafka (P99)", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum(rate(mongo_batch_insert_seconds_bucket[5m])) by (le))", "legendFormat": "Kafka -> Mongo (P99)", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(redis_projection_seconds_bucket[5m])) by (le))", "legendFormat": "Kafka -> Redis (P99)", "refId": "C" }
+      ],
+      "title": "Data Pipeline Latency (P99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 17,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "(\n  sum by (container_id) (\n    label_replace(\n      rate(container_cpu_cfs_throttled_periods_total{id=~\"/docker/[a-f0-9]+\"}[5m]),\n      \"container_id\",\n      \"$1\",\n      \"id\",\n      \".*/docker/([a-f0-9]{12}).*\"\n    )\n  )\n  /\n  sum by (container_id) (\n    label_replace(\n      rate(container_cpu_cfs_periods_total{id=~\"/docker/[a-f0-9]+\"}[5m]),\n      \"container_id\",\n      \"$1\",\n      \"id\",\n      \".*/docker/([a-f0-9]{12}).*\"\n    )\n  )\n) * 100 or vector(0)", "legendFormat": "ctr {{container_id}}", "refId": "A" }
+      ],
+      "title": "CPU Throttling (%)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "panels": [],
+      "title": "Traffic & Pipeline Stability",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (endpoint) (rate(query_vehicle_list_requests_total[5m]))", "legendFormat": "Query: {{endpoint}}", "refId": "A" },
+        { "expr": "rate(ingest_requests_total[5m])", "legendFormat": "Ingest API", "refId": "B" }
+      ],
+      "title": "API Request Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "rate(kafka_publish_success_total[5m])", "legendFormat": "Kafka OK", "refId": "A" },
+        { "expr": "rate(mongo_consumer_messages_total[5m])", "legendFormat": "Mongo OK", "refId": "B" },
+        { "expr": "rate(redis_projection_updates_total[5m])", "legendFormat": "Redis OK", "refId": "C" }
+      ],
+      "title": "Data Pipeline Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "id": 18,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (container_id) (label_replace(changes(container_start_time_seconds{id=~\"/docker/[a-f0-9]+\"}[1h]), \"container_id\", \"$1\", \"id\", \".*/docker/([a-f0-9]{12}).*\"))", "legendFormat": "ctr {{container_id}}", "refId": "A" }
+      ],
+      "title": "Pod / Container Restarts (1h)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "panels": [],
+      "title": "Resource Usage & Infrastructure",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (container_id) (label_replace(rate(container_cpu_usage_seconds_total{id=~\"/docker/[a-f0-9]+\"}[5m]), \"container_id\", \"$1\", \"id\", \".*/docker/([a-f0-9]{12}).*\"))", "legendFormat": "ctr {{container_id}}", "refId": "A" }
+      ],
+      "title": "Container CPU Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "sum by (container_id) (label_replace(container_memory_working_set_bytes{id=~\"/docker/[a-f0-9]+\"}, \"container_id\", \"$1\", \"id\", \".*/docker/([a-f0-9]{12}).*\"))", "legendFormat": "ctr {{container_id}}", "refId": "A" }
+      ],
+      "title": "Container Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "id": 19,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "100 * sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace=~\"$namespace\"}) / sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes{namespace=~\"$namespace\"})", "legendFormat": "K8s PVC: {{persistentvolumeclaim}}", "refId": "A" }
+      ],
+      "title": "Disk / PVC Usage (K8s 전용 지표)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["mobility", "ops", "local", "k8s"],
+  "templating": {
+    "list": [
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(container_cpu_usage_seconds_total{id=~\"/docker/[a-f0-9]+\"}, id)",
+        "includeAll": true,
+        "name": "job",
+        "query": "label_values(container_cpu_usage_seconds_total{id=~\"/docker/[a-f0-9]+\"}, id)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(kube_pod_info, namespace)",
+        "includeAll": true,
+        "name": "namespace",
+        "query": "label_values(kube_pod_info, namespace)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Mobility Integrated Ops Dashboard (v5 Fix)",
+  "uid": "mobility-integrated-v5",
+  "version": 1
+}

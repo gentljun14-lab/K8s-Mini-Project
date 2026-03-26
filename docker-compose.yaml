@@ -1,87 +1,208 @@
 services:
   mongodb:
-    image: mongo:latest
+    image: mongo:7
     container_name: mobility-mongodb
+    restart: unless-stopped
     ports:
       - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: mobility-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   kafka:
-    image: apache/kafka:latest
+    image: apache/kafka:3.9.0
     container_name: mobility-kafka
+    restart: unless-stopped
     ports:
       - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
     environment:
-      - KAFKA_NODE_ID=1
-      - KAFKA_PROCESS_ROLES=broker,controller
-      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9092'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
 
   ingest-server:
-    image: sbddjt/telemetry-ingest-api:latest
+    build:
+      context: ./src-command/ingest
+    image: mobility/telemetry-ingest-api:local
     container_name: mobility-ingest-server
+    restart: unless-stopped
     ports:
-      - "8080:8000"
+      - "8081:8000"
     environment:
-      - MONGO_URL=mongodb://mongodb:27017/ #
-      - KAFKA_BROKERS=kafka:9092             #
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPIC: "car.telemetry.events"
+      KAFKA_ENABLED: "true"
     depends_on:
-      - mongodb
-      - kafka
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   mongo-consumer:
-    image: sbddjt/telemetry-mongo-consumer:v1
+    build:
+      context: ./src-command/consumer
+    image: mobility/telemetry-mongo-consumer:local
     container_name: mobility-mongo-consumer
+    restart: unless-stopped
     environment:
-      - KAFKA_BOOTSTRAP=kafka:9092
-      - KAFKA_TOPIC=car.telemetry.events
-      - KAFKA_GROUP_ID=vehicle-mongo-saver
-      - MONGO_URI=mongodb://mongodb:27017/
-      - MONGO_DB=connected_car
-      - MONGO_COLLECTION=telemetry_history
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPIC: "car.telemetry.events"
+      KAFKA_GROUP_ID: "vehicle-command"
+      MONGO_URI: "mongodb://mongodb:27017"
+      MONGO_DB: "car_db"
+      MONGO_COLLECTION: "telemetry_history"
+      MONGO_TTL_DAYS: "7"
+      MONGO_TTL_MINUTES: "15"
     depends_on:
-      - kafka
-      - mongodb
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
 
   query-api:
-    image: hyunjun0907/mobility-query-api:v1
+    build:
+      context: ./src-query/api
+    image: mobility/mobility-query-api:local
     container_name: mobility-query-api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - REDIS_HOST=redis             #
-      - QUERY_API_PORT=8000          #
+      QUERY_API_PORT: "8000"
+      QUERY_API_HOST: "0.0.0.0"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_KEY_PATTERN: "vehicle:*:latest"
+      REDIS_ACTIVE_IDS_KEY: "vehicle:active_ids"
+      REDIS_ACTIVE_IDS_LEX_KEY: "vehicle:active_ids:lex"
+      REDIS_ACTIVE_WINDOW_MS: "120000"
+      MONGO_URI: "mongodb://mongodb:27017"
+      MONGO_DB: "car_db"
+      MONGO_COLLECTION: "telemetry_history"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   query-consumer:
-    image: hyunjun0907/mobility-query-consumer:v1
+    build:
+      context: ./src-query/consumer
+    image: mobility/mobility-query-consumer:local
     container_name: mobility-query-consumer
-    command: python query-consumer.py #
+    restart: unless-stopped
     environment:
-      - KAFKA_BOOTSTRAP=kafka:9092    #
-      - KAFKA_TOPIC=car.telemetry.events #
-      - REDIS_HOST=redis             #
-      - REDIS_TTL_SEC=60             #
+      KAFKA_BOOTSTRAP: "kafka:9092"
+      KAFKA_TOPIC: "car.telemetry.events"
+      KAFKA_GROUP_ID: "vehicle-query"
+      KAFKA_POLL_TIMEOUT_MS: "1000"
+      KAFKA_RETRY_SEC: "3"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_TTL_SEC: "60"
+      REDIS_ACTIVE_IDS_KEY: "vehicle:active_ids"
+      REDIS_ACTIVE_IDS_LEX_KEY: "vehicle:active_ids:lex"
     depends_on:
-      - kafka
-      - redis
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
-    image: hyunjun0907/k8s-mini-frontend:latest
+    build:
+      context: ./frontend
+    image: mobility/k8s-mini-frontend:local
     container_name: mobility-frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     environment:
-    - QUERY_API_URL=http://query-api:8000 
+      QUERY_API_URL: "http://query-api:8000"
+      VWORLD_API_KEY: "${VWORLD_API_KEY:-local-dev-key}"
     depends_on:
-      - query-api
+      query-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  dummy-data:
+    build:
+      context: ./dummy-data
+    image: mobility/dummy-car-server:local
+    container_name: mobility-dummy-data
+    restart: unless-stopped
+    profiles: ["dummy"]
+    ports:
+      - "8001:8001"
+    environment:
+      INGEST_SERVER_URL: "http://ingest-server:8000/api/query/telemetry"
+      DUMMY_SEED_COUNT: "${DUMMY_SEED_COUNT:-20}"
+      INGEST_BURST_SIZE: "${INGEST_BURST_SIZE:-5}"
+      INGEST_CONCURRENCY: "${INGEST_CONCURRENCY:-20}"
+      INGEST_INTERVAL_MIN: "${INGEST_INTERVAL_MIN:-1.0}"
+      INGEST_INTERVAL_MAX: "${INGEST_INTERVAL_MAX:-2.0}"
+    depends_on:
+      ingest-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/status', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  mongodb-data:
+  redis-data:
+  kafka-data:
