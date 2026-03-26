@@ -1,0 +1,30 @@
+community:
+  enabled: true
+
+monitoringPasscode: "admin1234!"
+
+persistence:
+  enabled: true
+  storageClass: "nfs-storage"
+  size: 10Gi
+
+postgresql:
+  primary:
+    persistence:
+      storageClass: "nfs-storage"
+      size: 5Gi
+
+service:
+  type: NodePort
+  nodePort: 30009
+
+resources:
+  requests:
+    memory: "1.5Gi"
+    cpu: "500m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+account:
+  adminPassword: "admin1234!"

@@ -39,6 +39,9 @@ pipeline {
     NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
     HARBOR_EMAIL = "ci@k8s-mini.local"
     LEGACY_NFS_PROVISIONER = "cluster.local/nfs-provisioner-nfs-subdir-external-provisioner"
+    SONAR_HOST_URL  = "http://10.0.2.101:30009"
+    SONAR_NAMESPACE = "sonarqube"
+    SONAR_INGRESS   = "k8s-manifests/sonarqube/sonarqube-ingress.yaml"
   }
 
   stages {
@@ -89,6 +92,36 @@ pipeline {
         script {
           def shortSha = sh(script: "git rev-parse --short=7 HEAD", returnStdout: true).trim()
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${shortSha}"
+        }
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv('sonarqube') {
+          sh '''
+            set -eu
+            cd ${PROJECT_DIR}
+
+            sonar-scanner --version
+
+            for SERVICE_DIR in src-command/ingest src-command/consumer src-query/api src-query/consumer frontend; do
+              echo "=== Analyzing: ${SERVICE_DIR} ==="
+              sonar-scanner \
+                -Dproject.settings=${WORKSPACE}/${SERVICE_DIR}/sonar-project.properties \
+                -Dsonar.projectBaseDir=${WORKSPACE}/${SERVICE_DIR} \
+                -Dsonar.host.url=${SONAR_HOST_URL} \
+                -Dsonar.token=${SONAR_AUTH_TOKEN}
+            done
+          '''
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: false
         }
       }
     }
