@@ -36,12 +36,12 @@ pipeline {
     HELM_QUERY_CHART_PATH = "k8s-manifests/mobility-query"
     HELM_FRONTEND_RELEASE = "mobility-frontend"
     HELM_FRONTEND_CHART_PATH = "k8s-manifests/mobility-frontend"
+    MONITORING_NAMESPACE = "monitoring"
+    MONITORING_DIR = "k8s-manifests/monitoring"
     NFS_STORAGE_MANIFEST = "k8s-manifests/nfs-storage.yaml"
     HARBOR_EMAIL = "ci@k8s-mini.local"
     LEGACY_NFS_PROVISIONER = "cluster.local/nfs-provisioner-nfs-subdir-external-provisioner"
-    SONAR_HOST_URL  = "http://10.0.2.101:30009"
-    SONAR_NAMESPACE = "sonarqube"
-    SONAR_INGRESS   = "k8s-manifests/sonarqube/sonarqube-ingress.yaml"
+    SONAR_HOST_URL  = "http://10.0.2.110:9000"
   }
 
   stages {
@@ -412,6 +412,38 @@ pipeline {
               --set frontend.image=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/k8s-mini-frontend:${IMAGE_TAG}
           '''
         }
+      }
+    }
+
+    stage('Apply Monitoring Resources') {
+      steps {
+        sh '''
+          set -eu
+          cd ${PROJECT_DIR}
+
+          if ! kubectl get namespace "${MONITORING_NAMESPACE}" >/dev/null 2>&1; then
+            echo "[monitoring] namespace ${MONITORING_NAMESPACE} not found, skip monitoring apply"
+            exit 0
+          fi
+
+          for crd in \
+            servicemonitors.monitoring.coreos.com \
+            podmonitors.monitoring.coreos.com \
+            prometheusrules.monitoring.coreos.com
+          do
+            if ! kubectl get crd "${crd}" >/dev/null 2>&1; then
+              echo "[monitoring] CRD ${crd} not found, skip monitoring apply"
+              exit 0
+            fi
+          done
+
+          kubectl apply -f ${MONITORING_DIR}/miniproject-servicemonitor.yaml
+          kubectl apply -f ${MONITORING_DIR}/miniproject-podmonitor.yaml
+          kubectl apply -f ${MONITORING_DIR}/mobility-alert-rules.yaml
+          kubectl apply -f ${MONITORING_DIR}/mobility-monitoring-ingress.yaml
+
+          bash ${MONITORING_DIR}/apply-grafana-dashboards.sh ${MONITORING_NAMESPACE}
+        '''
       }
     }
 
